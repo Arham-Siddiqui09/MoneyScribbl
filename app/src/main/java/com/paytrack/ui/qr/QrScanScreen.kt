@@ -1,644 +1,544 @@
 package com.paytrack.ui.qr
 
-import android.Manifest
 import android.content.Intent
-import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageProxy
-import androidx.camera.core.resolutionselector.ResolutionSelector
-import androidx.camera.core.resolutionselector.ResolutionStrategy
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
-import com.google.mlkit.vision.barcode.BarcodeScannerOptions
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.common.InputImage
-import com.paytrack.viewmodel.PendingConfirmationUiState
+import androidx.compose.ui.unit.sp
+import androidx.core.graphics.drawable.toBitmap
+import com.paytrack.viewmodel.CategoryOptionUiState
 import com.paytrack.viewmodel.QrScanUiState
-import java.util.concurrent.Executors
+import com.paytrack.viewmodel.UpiAppUiState
 
+// Theme colors
+private val InkPrimary = Color(0xFF101828)
+private val MutedGray = Color(0xFF667085)
+private val LightGray = Color(0xFF98A2B3)
+private val DeepTeal = Color(0xFF0F766E)
+private val Amber = Color(0xFFB45309)
+private val CrimsonRed = Color(0xFFB42318)
+private val CardBorder = Color(0xFFE4E7EC)
+private val PageBackground = Color(0xFFF5F6F8)
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QrScanRoute(
     uiState: QrScanUiState,
     onPermissionResult: (Boolean) -> Unit,
-    onQrScanned: (String) -> Unit,
     onAmountChanged: (String) -> Unit,
-    onFolderSelected: (String) -> Unit,
-    onStartManualConfirmation: () -> Unit,
+    onCategorySelected: (String) -> Unit,
     onRefreshApps: () -> Unit,
-    onLaunchPayment: (String) -> Intent?,
-    onPaymentAppOpened: (String) -> Unit,
-    onLaunchFailed: () -> Unit,
-    onConfirmResult: (Boolean) -> Unit,
-    onScanAgain: () -> Unit,
+    onOpenUpiApp: (String) -> Intent?,
+    onReturnFromUpiApp: () -> Unit,
+    onConfirmPayment: () -> Unit,
+    onDismissConfirm: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = onPermissionResult
-    )
-    val paymentLauncher = rememberLauncherForActivityResult(
+    val appLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) {
-        onRefreshApps()
+        onReturnFromUpiApp()
     }
 
     LaunchedEffect(Unit) {
         onRefreshApps()
-        permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
-    QrScanScreen(
-        uiState = uiState,
-        onRequestPermission = { permissionLauncher.launch(Manifest.permission.CAMERA) },
-        onQrScanned = onQrScanned,
-        onAmountChanged = onAmountChanged,
-        onFolderSelected = onFolderSelected,
-        onStartManualConfirmation = onStartManualConfirmation,
-        onRefreshApps = onRefreshApps,
-        onChooseUpiApp = { packageName ->
-            val intent = onLaunchPayment(packageName)
-            if (intent == null) return@QrScanScreen
-            runCatching {
-                paymentLauncher.launch(intent)
-                onPaymentAppOpened(packageName)
+    if (uiState.showPaymentConfirmDialog) {
+        val formattedAmount = uiState.pendingConfirmAmount.toDoubleOrNull()
+            ?.let { "₹%.2f".format(it) } ?: "₹${uiState.pendingConfirmAmount}"
+        AlertDialog(
+            onDismissRequest = onDismissConfirm,
+            title = { Text("Payment Successful?", fontFamily = FontFamily.Serif) },
+            text = {
+                Text(
+                    "Did your $formattedAmount payment via ${uiState.pendingConfirmAppLabel} go through?\n\n" +
+                        "Tap 'Yes' to log it under \"${uiState.pendingConfirmCategory}\".",
+                    fontFamily = FontFamily.SansSerif
+                )
+            },
+            confirmButton = {
+                Button(onClick = onConfirmPayment, colors = ButtonDefaults.buttonColors(containerColor = DeepTeal)) {
+                    Text("Yes, Log It")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismissConfirm) {
+                    Text("No, Cancel", color = MutedGray)
+                }
             }
-                .onFailure { onLaunchFailed() }
-        },
-        onConfirmResult = onConfirmResult,
-        onScanAgain = onScanAgain,
-        modifier = modifier
-    )
-}
+        )
+    }
 
-@Composable
-fun QrScanScreen(
-    uiState: QrScanUiState,
-    onRequestPermission: () -> Unit,
-    onQrScanned: (String) -> Unit,
-    onAmountChanged: (String) -> Unit,
-    onFolderSelected: (String) -> Unit,
-    onStartManualConfirmation: () -> Unit,
-    onRefreshApps: () -> Unit,
-    onChooseUpiApp: (String) -> Unit,
-    onConfirmResult: (Boolean) -> Unit,
-    onScanAgain: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val showCenteredScanner = uiState.scannedPayeeVpa.isBlank() && uiState.pendingConfirmation == null
+    // Modal Bottom Sheet state for Folders
+    var showFolderSheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
 
-    if (showCenteredScanner) {
-        Box(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            contentAlignment = Alignment.Center
+    if (showFolderSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showFolderSheet = false },
+            sheetState = sheetState,
+            containerColor = Color.White,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(
-                    text = "Scan payment QR",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Text(
-                    text = "Hold the merchant QR inside the frame to scan it quickly.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                if (uiState.hasCameraPermission) {
-                    QrCameraPreview(
-                        enabled = true,
-                        onQrScanned = onQrScanned
-                    )
-                } else {
-                    PermissionCard(onRequestPermission = onRequestPermission)
-                }
-
-                uiState.scanError?.let { error ->
-                    MessageCard(
-                        title = "Scanner issue",
-                        message = error,
-                        tone = Color(0xFFFFE5E5)
-                    )
-                }
-            }
+            FolderSelectionSheetContent(
+                categories = uiState.categories,
+                selectedCategory = uiState.selectedCategory,
+                onCategorySelected = { 
+                    onCategorySelected(it)
+                    showFolderSheet = false
+                },
+                onClose = { showFolderSheet = false }
+            )
         }
-    } else {
-        LazyColumn(
-            modifier = modifier
+    }
+
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        containerColor = PageBackground
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
                 .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item {
+            // Header
+            Column(modifier = Modifier.padding(top = 24.dp, bottom = 8.dp)) {
                 Text(
-                    text = "Scan payment QR",
-                    style = MaterialTheme.typography.headlineSmall,
+                    text = "Pay via UPI",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontFamily = FontFamily.Serif,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 16.dp)
+                    color = InkPrimary
                 )
-            }
-
-            uiState.scanError?.let { error ->
-                item { MessageCard(title = "Scanner issue", message = error, tone = Color(0xFFFFE5E5)) }
-            }
-
-            if (uiState.scannedPayeeVpa.isNotBlank()) {
-                item {
-                    PaymentReviewCard(
-                        merchantName = uiState.scannedMerchantName,
-                        payeeVpa = uiState.scannedPayeeVpa,
-                        note = uiState.scannedNote,
-                        scannedAmountText = uiState.scannedAmountText,
-                        amountInput = uiState.amountInput,
-                        isAmountLocked = uiState.isAmountLocked,
-                        onAmountChanged = onAmountChanged,
-                        folderOptions = uiState.folders,
-                        selectedFolderId = uiState.selectedFolderId,
-                        selectedFolderBalance = uiState.selectedFolderBalance,
-                        projectedBalance = uiState.projectedBalance,
-                        onFolderSelected = onFolderSelected
-                    )
-                }
-
-                item {
-                    UpiAppPickerCard(
-                        merchantName = uiState.scannedMerchantName,
-                        payeeVpa = uiState.scannedPayeeVpa,
-                        isAmountLocked = uiState.isAmountLocked,
-                        appItems = uiState.availableUpiApps,
-                        paymentError = uiState.paymentError,
-                        onStartManualConfirmation = onStartManualConfirmation,
-                        onRefreshApps = onRefreshApps,
-                        onChooseUpiApp = onChooseUpiApp
-                    )
-                }
-
-                item {
-                    Button(
-                        onClick = onScanAgain,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Scan Another QR")
-                    }
-                }
-            }
-
-            uiState.pendingConfirmation?.let { confirmation ->
-                item {
-                    ConfirmationCard(
-                        confirmation = confirmation,
-                        onConfirmResult = onConfirmResult
-                    )
-                }
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun PermissionCard(onRequestPermission: () -> Unit) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(24.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = "Camera access is required to scan merchant QR codes.",
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Button(onClick = onRequestPermission) {
-                Text("Grant Camera Access")
-            }
-        }
-    }
-}
-
-@Composable
-private fun PaymentReviewCard(
-    merchantName: String,
-    payeeVpa: String,
-    note: String?,
-    scannedAmountText: String,
-    amountInput: String,
-    isAmountLocked: Boolean,
-    onAmountChanged: (String) -> Unit,
-    folderOptions: List<com.paytrack.viewmodel.FolderPickerUiState>,
-    selectedFolderId: String?,
-    selectedFolderBalance: String,
-    projectedBalance: String,
-    onFolderSelected: (String) -> Unit
-) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(24.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = merchantName,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = payeeVpa,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            note?.let { noteText ->
                 Text(
-                    text = noteText,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (scannedAmountText.isNotBlank()) {
-                Text(
-                    text = "QR amount: $scannedAmountText",
-                    color = MaterialTheme.colorScheme.primary
+                    text = "Enter the amount and pick an app to scan the merchant QR.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FontFamily.SansSerif,
+                    color = MutedGray,
+                    modifier = Modifier.padding(top = 4.dp)
                 )
             }
 
-            OutlinedTextField(
-                value = amountInput,
-                onValueChange = onAmountChanged,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(if (isAmountLocked) "Amount from merchant QR" else "Amount") },
-                singleLine = true,
-                readOnly = isAmountLocked,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-            )
-
-            if (isAmountLocked) {
-                Text(
-                    text = "This QR already includes a fixed merchant amount, so PayTrack keeps that value unchanged.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Text(
-                text = "Select folder",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            folderOptions.forEach { folder ->
-                FolderOptionRow(
-                    name = folder.name,
-                    balance = folder.balance,
-                    selected = folder.id == selectedFolderId,
-                    onClick = { onFolderSelected(folder.id) }
-                )
-            }
-
-            if (selectedFolderId != null) {
-                Text(
-                    text = "Available balance: $selectedFolderBalance",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (projectedBalance.isNotBlank()) {
-                    Text(
-                        text = "Balance after payment: $projectedBalance",
-                        color = if (projectedBalance.startsWith("-")) Color(0xFFB3261E) else MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FolderOptionRow(
-    name: String,
-    balance: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(18.dp)
-            )
-            .clickable(onClick = onClick)
-            .padding(14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(text = name, fontWeight = FontWeight.SemiBold)
-        Text(text = balance)
-    }
-}
-
-@Composable
-private fun UpiAppPickerCard(
-    merchantName: String,
-    payeeVpa: String,
-    isAmountLocked: Boolean,
-    appItems: List<com.paytrack.viewmodel.UpiAppUiState>,
-    paymentError: String?,
-    onStartManualConfirmation: () -> Unit,
-    onRefreshApps: () -> Unit,
-    onChooseUpiApp: (String) -> Unit
-) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(24.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = "Choose a UPI app",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-
+            // Step 1: Amount & Folder
+            StepLabel("STEP 1 · AMOUNT & FOLDER")
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(18.dp)
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, CardBorder)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text(
-                        text = "Fallback for merchant QR issues",
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = if (isAmountLocked) {
-                            "If direct app opening fails for this merchant QR, pay $merchantName ($payeeVpa) in GPay manually, then come back and confirm here."
-                        } else {
-                            "If direct app opening fails, pay $merchantName ($payeeVpa) in your UPI app manually, then come back and confirm here."
+                    OutlinedTextField(
+                        value = uiState.amountInput,
+                        onValueChange = onAmountChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Amount", color = MutedGray) },
+                        placeholder = { Text("0.00", color = LightGray) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        prefix = { 
+                            Text(
+                                "₹ ", 
+                                color = InkPrimary, 
+                                fontWeight = FontWeight.SemiBold,
+                                style = TextStyle(fontFeatureSettings = "tnum")
+                            ) 
                         },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        textStyle = TextStyle(
+                            fontFamily = FontFamily.SansSerif,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = InkPrimary,
+                            fontFeatureSettings = "tnum"
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = DeepTeal,
+                            unfocusedBorderColor = CardBorder,
+                            focusedLabelColor = DeepTeal
+                        )
                     )
-                    Button(
-                        onClick = onStartManualConfirmation,
-                        modifier = Modifier.fillMaxWidth()
+
+                    // Compact folder selector row
+                    val selectedFolderInfo = uiState.categories.find { it.name == uiState.selectedCategory }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
+                            .clickable { showFolderSheet = true }
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("I Will Pay Manually And Confirm")
-                    }
-                }
-            }
-
-            if (appItems.isEmpty()) {
-                Text(
-                    text = "No UPI apps were found. Install one and refresh this list.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Button(onClick = onRefreshApps) {
-                    Text("Refresh UPI Apps")
-                }
-            } else {
-                appItems.forEach { app ->
-                    Button(
-                        onClick = { onChooseUpiApp(app.packageName) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Open ${app.label} To Scan Again")
-                    }
-                }
-            }
-
-            paymentError?.let { errorMessage ->
-                Text(
-                    text = errorMessage,
-                    color = Color(0xFFB3261E)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ConfirmationCard(
-    confirmation: PendingConfirmationUiState,
-    onConfirmResult: (Boolean) -> Unit
-) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(24.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = "Confirm payment result",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-            Text("Merchant: ${confirmation.merchantName}")
-            Text("Folder: ${confirmation.folderName}")
-            Text("Amount: ${confirmation.amount}")
-            Text("UPI app: ${confirmation.appLabel}")
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(
-                    onClick = { onConfirmResult(true) },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Payment Successful")
-                }
-                Button(
-                    onClick = { onConfirmResult(false) },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Failed / Cancelled")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MessageCard(
-    title: String,
-    message: String,
-    tone: Color
-) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = tone),
-        shape = RoundedCornerShape(18.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text(text = title, fontWeight = FontWeight.Bold)
-            Text(text = message)
-        }
-    }
-}
-
-@Composable
-private fun QrCameraPreview(
-    enabled: Boolean,
-    onQrScanned: (String) -> Unit
-) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val previewView = remember {
-        PreviewView(context).apply {
-            scaleType = PreviewView.ScaleType.FILL_CENTER
-        }
-    }
-    var lastValue by remember { mutableStateOf<String?>(null) }
-
-    DisposableEffect(enabled) {
-        if (!enabled) {
-            onDispose { }
-        } else {
-            val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-            val executor = Executors.newSingleThreadExecutor()
-            val scanner = BarcodeScanning.getClient(
-                BarcodeScannerOptions.Builder()
-                    .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-                    .build()
-            )
-
-            cameraProviderFuture.addListener({
-                val cameraProvider = cameraProviderFuture.get()
-                val preview = androidx.camera.core.Preview.Builder().build().also { previewUseCase ->
-                    previewUseCase.surfaceProvider = previewView.surfaceProvider
-                }
-                val analysis = ImageAnalysis.Builder()
-                    .setResolutionSelector(
-                        ResolutionSelector.Builder()
-                            .setResolutionStrategy(
-                                ResolutionStrategy(
-                                    Size(1280, 720),
-                                    ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER
-                                )
-                            )
-                            .build()
-                    )
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
-
-                analysis.setAnalyzer(executor) { imageProxy ->
-                    processImageProxy(
-                        imageProxy = imageProxy,
-                        onCodeFound = { value ->
-                            if (lastValue != value) {
-                                lastValue = value
-                                onQrScanned(value)
+                        if (selectedFolderInfo != null) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                FolderAvatar(selectedFolderInfo.name, 36)
+                                Column {
+                                    Text(selectedFolderInfo.name, fontWeight = FontWeight.SemiBold, color = InkPrimary)
+                                    selectedFolderInfo.availableBudgetLabel?.let {
+                                        Text(
+                                            "Available $it", 
+                                            fontSize = 12.sp, 
+                                            color = if (it.startsWith("(")) CrimsonRed else DeepTeal,
+                                            style = TextStyle(fontFeatureSettings = "tnum")
+                                        )
+                                    }
+                                }
                             }
-                        },
-                        scanner = scanner
-                    )
+                        } else {
+                            Text("Select a folder", color = MutedGray)
+                        }
+                        Icon(Icons.Default.ChevronRight, contentDescription = "Select Folder", tint = MutedGray)
+                    }
                 }
+            }
 
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
-                    lifecycleOwner,
-                    CameraSelector.DEFAULT_BACK_CAMERA,
-                    preview,
-                    analysis
-                )
-            }, ContextCompat.getMainExecutor(context))
+            // Step 2: Choose UPI App
+            StepLabel("STEP 2 · CHOOSE UPI APP")
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, CardBorder)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    if (!uiState.canLaunchPayment) {
+                        Text(
+                            text = "Fill in amount and select a folder to enable UPI apps.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Amber,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center
+                        )
+                    }
 
-            onDispose {
-                runCatching { ProcessCameraProvider.getInstance(context).get().unbindAll() }
-                scanner.close()
-                executor.shutdown()
+                    if (uiState.availableUpiApps.isEmpty()) {
+                        Text(
+                            text = "No UPI apps found on this device.",
+                            color = MutedGray,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center
+                        )
+                    } else {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(3),
+                            modifier = Modifier.heightIn(max = 400.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            userScrollEnabled = false
+                        ) {
+                            items(uiState.availableUpiApps) { app ->
+                                UpiAppTile(
+                                    app = app,
+                                    enabled = uiState.canLaunchPayment,
+                                    onClick = {
+                                        val intent = onOpenUpiApp(app.packageName)
+                                        if (intent != null) {
+                                            runCatching { appLauncher.launch(intent) }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    uiState.paymentError?.let { error ->
+                        Text(
+                            text = error,
+                            color = CrimsonRed,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+
+            // How It Works
+            var isHowItWorksExpanded by remember { mutableStateOf(false) }
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, CardBorder),
+                modifier = Modifier.padding(bottom = 32.dp) // extra padding for bottom navigation breathing room
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { isHowItWorksExpanded = !isHowItWorksExpanded }
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "How it works",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = InkPrimary
+                        )
+                        Icon(
+                            imageVector = if (isHowItWorksExpanded) Icons.Default.Close else Icons.Default.ExpandMore,
+                            contentDescription = "Expand",
+                            tint = MutedGray
+                        )
+                    }
+                    AnimatedVisibility(visible = isHowItWorksExpanded) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            listOf(
+                                "1️⃣  Enter the amount and pick a folder",
+                                "2️⃣  Tap a UPI app to open it",
+                                "3️⃣  Scan the merchant QR inside the app",
+                                "4️⃣  Enter the amount & pay normally",
+                                "5️⃣  Come back — PayTrack logs your expense!"
+                            ).forEach { step ->
+                                Text(
+                                    text = step,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MutedGray
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
+}
 
-    AndroidView(
-        factory = { previewView },
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FolderSelectionSheetContent(
+    categories: List<CategoryOptionUiState>,
+    selectedCategory: String?,
+    onCategorySelected: (String) -> Unit,
+    onClose: () -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredCategories = categories.filter { 
+        it.name.contains(searchQuery, ignoreCase = true) 
+    }
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(280.dp)
-            .background(Color.Black, RoundedCornerShape(24.dp))
-    )
+            .fillMaxHeight(0.75f)
+            .background(Color.White)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Select folder",
+                style = MaterialTheme.typography.titleLarge,
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                color = InkPrimary
+            )
+            IconButton(onClick = onClose) {
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = MutedGray)
+            }
+        }
+
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            placeholder = { Text("Search folders", color = LightGray) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = LightGray) },
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = DeepTeal,
+                unfocusedBorderColor = CardBorder
+            ),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(bottom = 24.dp)
+        ) {
+            items(filteredCategories.size) { index ->
+                val category = filteredCategories[index]
+                val isSelected = category.name == selectedCategory
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onCategorySelected(category.name) }
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FolderAvatar(category.name, 40)
+                        Column {
+                            Text(category.name, fontWeight = FontWeight.SemiBold, color = InkPrimary)
+                            category.availableBudgetLabel?.let {
+                                val isLow = it.startsWith("(") || it.contains("0.00") // rough heuristic
+                                Text(
+                                    "Available $it", 
+                                    fontSize = 13.sp, 
+                                    color = if (isLow) CrimsonRed else DeepTeal,
+                                    style = TextStyle(fontFeatureSettings = "tnum")
+                                )
+                            }
+                        }
+                    }
+                    if (isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .background(DeepTeal, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("✓", color = Color.White, fontSize = 14.sp)
+                        }
+                    }
+                }
+                if (index < filteredCategories.size - 1) {
+                    HorizontalDivider(color = CardBorder, modifier = Modifier.padding(horizontal = 20.dp))
+                }
+            }
+        }
+    }
 }
 
-private fun processImageProxy(
-    imageProxy: ImageProxy,
-    onCodeFound: (String) -> Unit,
-    scanner: com.google.mlkit.vision.barcode.BarcodeScanner
+@Composable
+fun UpiAppTile(
+    app: UpiAppUiState,
+    enabled: Boolean,
+    onClick: () -> Unit
 ) {
-    val mediaImage = imageProxy.image ?: run {
-        imageProxy.close()
-        return
+    val alpha = if (enabled) 1f else 0.5f
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        val bitmap = app.icon?.toBitmap()?.asImageBitmap()
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = app.label,
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape),
+                alpha = alpha
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(Color.LightGray.copy(alpha = alpha), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(app.label.take(1).uppercase(), color = Color.White)
+            }
+        }
+        Text(
+            text = app.label,
+            fontSize = 12.sp,
+            color = InkPrimary.copy(alpha = alpha),
+            maxLines = 1,
+            textAlign = TextAlign.Center
+        )
     }
-    val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-    scanner.process(image)
-        .addOnSuccessListener { barcodes ->
-            barcodes.firstOrNull()?.rawValue?.let(onCodeFound)
-        }
-        .addOnCompleteListener {
-            imageProxy.close()
-        }
+}
+
+@Composable
+fun FolderAvatar(name: String, sizeDp: Int) {
+    val initial = name.take(1).uppercase()
+    val colors = listOf(Color(0xFFE0F2FE), Color(0xFFFEF3C7), Color(0xFFFCE7F3), Color(0xFFD1FAE5))
+    val textColors = listOf(Color(0xFF0369A1), Color(0xFFB45309), Color(0xFFBE185D), Color(0xFF047857))
+    val hash = kotlin.math.abs(name.hashCode()) % colors.size
+    
+    Box(
+        modifier = Modifier
+            .size(sizeDp.dp)
+            .background(colors[hash], CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = initial,
+            color = textColors[hash],
+            fontWeight = FontWeight.Bold,
+            fontSize = (sizeDp / 2.2).sp
+        )
+    }
+}
+
+@Composable
+fun StepLabel(text: String) {
+    Text(
+        text = text,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        color = MutedGray,
+        letterSpacing = 1.sp,
+        modifier = Modifier.padding(start = 4.dp, top = 8.dp)
+    )
 }

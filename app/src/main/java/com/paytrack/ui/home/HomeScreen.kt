@@ -1,98 +1,68 @@
 package com.paytrack.ui.home
 
+import android.app.DatePickerDialog
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.TrendingUp
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Analytics
-import androidx.compose.material.icons.outlined.ArrowCircleUp
-import androidx.compose.material.icons.outlined.DeleteOutline
-import androidx.compose.material.icons.outlined.DirectionsBus
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.LocalCafe
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.PersonOutline
-import androidx.compose.material.icons.outlined.QrCodeScanner
-import androidx.compose.material.icons.outlined.Restaurant
-import androidx.compose.material.icons.outlined.ShoppingCart
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.paytrack.ui.theme.AppBlue
-import com.paytrack.ui.theme.AppBorder
-import com.paytrack.ui.theme.AppCoral
-import com.paytrack.ui.theme.AppGrayChip
-import com.paytrack.ui.theme.AppPink
-import com.paytrack.ui.theme.AppPrimary
-import com.paytrack.ui.theme.AppProgressTrack
-import com.paytrack.ui.theme.AppSurfaceMuted
-import com.paytrack.ui.theme.PayTrackTheme
-import com.paytrack.viewmodel.BudgetCategoryUiState
-import com.paytrack.viewmodel.FolderTransactionChartUiState
-import com.paytrack.viewmodel.HighlightCardUiState
-import com.paytrack.viewmodel.HomeUiState
-import com.paytrack.viewmodel.InsightCardUiState
-import com.paytrack.viewmodel.RecentTransactionUiState
-import java.text.NumberFormat
-import java.util.Locale
-
-private val inrFormatter = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("en-IN"))
+import com.paytrack.ui.home.components.WeeklyExpenseChart
+import com.paytrack.ui.theme.*
+import com.paytrack.viewmodel.*
+import java.util.Calendar
+import java.util.Date
 
 @Composable
 fun HomeRoute(
     uiState: HomeUiState,
-    onAddCategory: () -> Unit,
-    onEditCategory: (String) -> Unit,
-    onDeleteCategory: (String) -> Unit,
+    onOpenProfile: () -> Unit,
+    onAddTransaction: () -> Unit,
+    onOpenTransactions: () -> Unit,
     onOpenQr: () -> Unit,
-    onOpenInsights: () -> Unit,
+    onEditGoal: () -> Unit,
+    onCreateFolder: (String) -> Unit,
+    onSaveFolderLimit: (String, Double, Long) -> Unit,
+    onClearFolderLimit: (String) -> Unit,
+    onDeleteFolder: (String) -> Unit,
+    onClearFolderMessage: () -> Unit,
+    onChartPeriodSelected: (com.paytrack.viewmodel.TimePeriod) -> Unit,
     modifier: Modifier = Modifier
 ) {
     HomeScreen(
         uiState = uiState,
-        onAddCategory = onAddCategory,
-        onEditCategory = onEditCategory,
-        onDeleteCategory = onDeleteCategory,
+        onOpenProfile = onOpenProfile,
+        onAddTransaction = onAddTransaction,
+        onOpenTransactions = onOpenTransactions,
         onOpenQr = onOpenQr,
-        onOpenInsights = onOpenInsights,
+        onEditGoal = onEditGoal,
+        onCreateFolder = onCreateFolder,
+        onSaveFolderLimit = onSaveFolderLimit,
+        onClearFolderLimit = onClearFolderLimit,
+        onDeleteFolder = onDeleteFolder,
+        onClearFolderMessage = onClearFolderMessage,
+        onChartPeriodSelected = onChartPeriodSelected,
         modifier = modifier
     )
 }
@@ -100,13 +70,23 @@ fun HomeRoute(
 @Composable
 fun HomeScreen(
     uiState: HomeUiState,
-    onAddCategory: () -> Unit,
-    onEditCategory: (String) -> Unit,
-    onDeleteCategory: (String) -> Unit,
+    onOpenProfile: () -> Unit,
+    onAddTransaction: () -> Unit,
+    onOpenTransactions: () -> Unit,
     onOpenQr: () -> Unit,
-    onOpenInsights: () -> Unit,
+    onEditGoal: () -> Unit,
+    onCreateFolder: (String) -> Unit,
+    onSaveFolderLimit: (String, Double, Long) -> Unit,
+    onClearFolderLimit: (String) -> Unit,
+    onDeleteFolder: (String) -> Unit,
+    onClearFolderMessage: () -> Unit,
+    onChartPeriodSelected: (com.paytrack.viewmodel.TimePeriod) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var selectedFolder by remember { mutableStateOf<FolderUiState?>(null) }
+    var createAttempted by remember { mutableStateOf(false) }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background
@@ -117,318 +97,282 @@ fun HomeScreen(
                 .padding(innerPadding)
         ) {
             if (uiState.isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center),
-                    color = MaterialTheme.colorScheme.primary
-                )
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             } else {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .statusBarsPadding()
                         .padding(horizontal = 20.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                    verticalArrangement = Arrangement.spacedBy(24.dp)
                 ) {
+                    item { Spacer(modifier = Modifier.height(8.dp)) }
                     item {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        HeaderRow(appName = uiState.appName)
+                        HeroBalanceCard(
+                            balance = uiState.currentBalance,
+                            income = uiState.totalIncome,
+                            expenses = uiState.totalExpenses,
+                            onOpenProfile = onOpenProfile
+                        )
                     }
-
                     item {
-                        BudgetOverviewCard(
-                            uiState = uiState,
+                        ActionRow(
+                            onAddTransaction = onAddTransaction,
                             onOpenQr = onOpenQr,
-                            onOpenInsights = onOpenInsights
+                            onOpenTransactions = onOpenTransactions
                         )
                     }
-
                     item {
-                        SectionHeader(
-                            title = "Monthly Insights",
-                            trailingText = uiState.monthLabel
+                        GoalCard(
+                            progress = uiState.savingsProgress,
+                            progressLabel = uiState.savingsProgressLabel,
+                            goalSummary = uiState.goalSummary,
+                            onEditGoal = onEditGoal
                         )
                     }
-
                     item {
-                        FolderSpendBarChart(
-                            entries = uiState.folderSpendChart,
-                            isEmpty = uiState.isFolderSpendChartEmpty
+                        WeeklyChartCard(
+                            chartState = uiState.weeklyExpenseChart,
+                            onChartPeriodSelected = onChartPeriodSelected
                         )
                     }
-
+                    if (uiState.topCategories.isNotEmpty()) {
+                        item {
+                            SectionTitle(title = "Top Categories")
+                        }
+                        items(uiState.topCategories.withIndex().toList()) { (index, category) ->
+                            val color = ChartColors[index % ChartColors.size]
+                            CategorySummaryRow(title = category.name, value = category.amount, color = color)
+                        }
+                    } else {
+                        item {
+                            SectionTitle(title = "Top Categories")
+                        }
+                        item { EmptyCard("Your category spend summary will appear after the first expense.") }
+                    }
                     item {
-                        GrowthForecastCard(highlightCard = uiState.highlightCard)
+                        FolderSectionHeader(onCreateFolder = {
+                            onClearFolderMessage()
+                            createAttempted = false
+                            showCreateDialog = true
+                        })
                     }
-
-                    item {
-                        SectionHeader(title = "Folders")
+                    uiState.folderMessage?.let { message ->
+                        item { EmptyCard(message) }
                     }
-
-                    items(uiState.folders) { category ->
-                        CategoryCard(
-                            category = category,
-                            onEdit = { onEditCategory(category.id) },
-                            onDelete = { onDeleteCategory(category.id) }
-                        )
-                    }
-
-                    item {
-                        AddCategoryCard(onClick = onAddCategory)
-                    }
-
-                    item {
-                        RecentTransactionsCard(transactions = uiState.recentTransactions)
-                    }
-
-                    item {
-                        Spacer(modifier = Modifier.height(12.dp))
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FolderSpendBarChart(
-    entries: List<FolderTransactionChartUiState>,
-    isEmpty: Boolean
-) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(24.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                text = "Money transacted per folder",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            if (isEmpty || entries.isEmpty()) {
-                Text(
-                    text = "No folder transactions recorded yet.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                val visibleEntries = entries.take(6)
-                val maxAmount = visibleEntries.maxOfOrNull(FolderTransactionChartUiState::amount)?.takeIf { it > 0.0 } ?: 1.0
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(220.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    visibleEntries.forEach { entry ->
-                        val fraction = (entry.amount / maxAmount).toFloat().coerceIn(0f, 1f)
-                        val accentColor = Color(entry.accentColor)
-
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Bottom
-                        ) {
-                            Text(
-                                text = inrFormatter.format(entry.amount),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .defaultMinSize(minHeight = 18.dp)
-                                    .fillMaxHeight(0.75f * fraction)
-                                    .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 6.dp, bottomEnd = 6.dp))
-                                    .background(
-                                        brush = Brush.verticalGradient(
-                                            listOf(
-                                                accentColor,
-                                                accentColor.copy(alpha = 0.45f)
-                                            )
-                                        )
-                                    )
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text(
-                                text = entry.name.take(10),
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                textAlign = TextAlign.Center,
-                                color = MaterialTheme.colorScheme.onSurface
+                    if (uiState.folders.isEmpty()) {
+                        item { EmptyCard("📁 Create a folder to track your budgets.") }
+                    } else {
+                        items(uiState.folders) { folder ->
+                            FolderCard(
+                                folder = folder,
+                                usage = uiState.folderUsage.find { it.name == folder.name },
+                                onSetLimit = {
+                                    onClearFolderMessage()
+                                    selectedFolder = folder
+                                },
+                                onDeleteFolder = onDeleteFolder,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
                     }
+                    item { Spacer(modifier = Modifier.height(32.dp)) }
                 }
             }
         }
     }
-}
 
-@Composable
-private fun HeaderRow(appName: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFFD9E6EC)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.PersonOutline,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(16.dp)
-                )
+    if (showCreateDialog) {
+        CreateFolderDialog(
+            onDismiss = {
+                showCreateDialog = false
+                createAttempted = false
+                onClearFolderMessage()
+            },
+            errorMessage = uiState.folderMessage,
+            onCreateFolder = {
+                createAttempted = true
+                onCreateFolder(it)
             }
-            Text(
-                text = appName,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
-
-        Icon(
-            imageVector = Icons.Outlined.Notifications,
-            contentDescription = "Notifications",
-            tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(18.dp)
         )
+    }
+
+    selectedFolder?.let { folder ->
+        EditFolderLimitDialog(
+            folder = folder,
+            errorMessage = uiState.folderMessage,
+            onDismiss = {
+                selectedFolder = null
+                onClearFolderMessage()
+            },
+            onSave = { amount, endDate ->
+                onSaveFolderLimit(folder.name, amount, endDate)
+                selectedFolder = null
+            },
+            onClearLimit = {
+                onClearFolderLimit(folder.name)
+                selectedFolder = null
+            }
+        )
+    }
+
+    LaunchedEffect(uiState.folders.size, uiState.folderMessage, showCreateDialog, createAttempted) {
+        if (showCreateDialog && createAttempted && uiState.folderMessage == null) {
+            showCreateDialog = false
+            createAttempted = false
+        }
     }
 }
 
 @Composable
-private fun BudgetOverviewCard(
-    uiState: HomeUiState,
-    onOpenQr: () -> Unit,
-    onOpenInsights: () -> Unit
-) {
+private fun HeroBalanceCard(balance: String, income: String, expenses: String, onOpenProfile: () -> Unit) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
                     brush = Brush.linearGradient(
-                        listOf(
-                            Color(0xFFF8FBFB),
-                            Color(0xFFF7FAFD)
-                        )
+                        colors = GradientHero
                     )
                 )
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(24.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "Available Budget",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "Live balance across all folders",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Text(
-                text = uiState.availableBudget,
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Start
-            ) {
-                BudgetAmountBlock(
-                    label = "TRACKED SPEND",
-                    value = uiState.spentAmount,
-                    valueColor = Color(0xFF23A98B)
-                )
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = uiState.budgetProgressLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF168F81),
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFFDDF7EF))
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
-                )
-
-                ProgressTrack(
-                    progress = uiState.budgetProgress,
-                    progressColor = AppPrimary
-                )
-            }
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                ActionPill(
-                    label = "QR Pay",
-                    backgroundColor = AppGrayChip,
-                    contentColor = Color.White,
-                    icon = Icons.Outlined.QrCodeScanner,
-                    onClick = onOpenQr
-                )
-                ActionPill(
-                    label = "Insights",
-                    backgroundColor = AppBlue,
-                    contentColor = Color(0xFF357693),
-                    icon = Icons.Outlined.Analytics,
-                    onClick = onOpenInsights
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Good morning ✨",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White.copy(alpha = 0.9f)
+                    )
+                    IconButton(
+                        onClick = onOpenProfile,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(Color.White.copy(alpha = 0.2f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Person,
+                            contentDescription = "Open profile",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+                
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Total Balance",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        text = balance,
+                        style = MaterialTheme.typography.displayMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    HeroMetricPill(
+                        icon = Icons.Outlined.ArrowUpward,
+                        label = "Income",
+                        value = income,
+                        iconTint = IncomeGreen,
+                        modifier = Modifier.weight(1f)
+                    )
+                    HeroMetricPill(
+                        icon = Icons.Outlined.ArrowDownward,
+                        label = "Expenses",
+                        value = expenses,
+                        iconTint = ExpenseRed,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun BudgetAmountBlock(
+private fun HeroMetricPill(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     value: String,
-    valueColor: Color
+    iconTint: Color,
+    modifier: Modifier = Modifier
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        modifier = modifier
+            .background(Color.White.copy(alpha = 0.18f), RoundedCornerShape(20.dp))
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .background(Color.White, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = iconTint,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Column {
+            Text(text = label, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f))
+            Text(text = value, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Color.White)
+        }
+    }
+}
+
+@Composable
+private fun ActionRow(
+    onAddTransaction: () -> Unit,
+    onOpenQr: () -> Unit,
+    onOpenTransactions: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        ActionPill(
+            label = "Add",
+            icon = Icons.Outlined.Add,
+            backgroundColor = IndigoPrimary,
+            contentColor = Color.White,
+            onClick = onAddTransaction,
+            modifier = Modifier.weight(1f)
         )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = valueColor
+        ActionPill(
+            label = "Scan QR",
+            icon = Icons.Outlined.QrCodeScanner,
+            backgroundColor = VioletAccent,
+            contentColor = Color.White,
+            onClick = onOpenQr,
+            modifier = Modifier.weight(1f)
+        )
+        ActionPill(
+            label = "History",
+            icon = Icons.Outlined.ReceiptLong,
+            backgroundColor = IncomeGreen,
+            contentColor = Color.White,
+            onClick = onOpenTransactions,
+            modifier = Modifier.weight(1f)
         )
     }
 }
@@ -436,266 +380,83 @@ private fun BudgetAmountBlock(
 @Composable
 private fun ActionPill(
     label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     backgroundColor: Color,
     contentColor: Color,
-    icon: ImageVector,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = Modifier
-            .clickable(onClick = onClick)
+    Column(
+        modifier = modifier
+            .height(72.dp)
             .clip(RoundedCornerShape(20.dp))
             .background(backgroundColor)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = contentColor,
-            modifier = Modifier.size(16.dp)
-        )
-        Text(
-            text = label,
-            color = contentColor,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold
-        )
+        Icon(imageVector = icon, contentDescription = label, tint = contentColor, modifier = Modifier.size(24.dp))
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(text = label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = contentColor)
     }
 }
 
 @Composable
-private fun SectionHeader(
-    title: String,
-    trailingText: String? = null
+private fun GoalCard(
+    progress: Float,
+    progressLabel: String,
+    goalSummary: String,
+    onEditGoal: () -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
-        )
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.coerceIn(0f, 1f),
+        animationSpec = spring(),
+        label = "progressAnim"
+    )
 
-        if (trailingText != null) {
-            Text(
-                text = trailingText,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun InsightCard(insight: InsightCardUiState) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(24.dp)
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(26.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFE5F7FC)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Home,
-                            contentDescription = null,
-                            tint = Color(0xFF3C88A4),
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
-                    Text(
-                        text = insight.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
+                Text("Savings Goal", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
-                    text = insight.status,
+                    text = "Edit",
                     style = MaterialTheme.typography.labelMedium,
-                    color = Color(0xFF4A9AC0),
-                    fontWeight = FontWeight.SemiBold
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable(onClick = onEditGoal)
                 )
             }
-
-            Text(
-                text = insight.description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = insight.progressLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = insight.progressValue,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(progressLabel, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(goalSummary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-
-            ProgressTrack(
-                progress = insight.progress,
-                progressColor = AppBlue
-            )
-        }
-    }
-}
-
-@Composable
-private fun GrowthForecastCard(highlightCard: HighlightCardUiState) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = AppPink),
-        shape = RoundedCornerShape(28.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
             Box(
                 modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(AppCoral),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .height(10.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(999.dp))
             ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.TrendingUp,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-
-            Text(
-                text = highlightCard.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = highlightCard.subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun CategoryCard(
-    category: BudgetCategoryUiState,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit
-) {
-    val accentColor = Color(category.accentColor)
-
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(18.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFFF2F2F0)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = categoryIcon(category.name),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = category.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = category.amount,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    FolderActionButton(
-                        label = "Edit",
-                        icon = Icons.Outlined.Edit,
-                        onClick = onEdit,
-                        containerColor = accentColor.copy(alpha = 0.14f),
-                        contentColor = accentColor
-                    )
-                    FolderActionButton(
-                        label = "Delete",
-                        icon = Icons.Outlined.DeleteOutline,
-                        onClick = onDelete,
-                        containerColor = Color(0xFFFFF1F0),
-                        contentColor = AppCoral
-                    )
-                }
-
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(accentColor.copy(alpha = 0.18f))
+                        .fillMaxWidth(animatedProgress)
+                        .height(10.dp)
+                        .background(
+                            brush = Brush.linearGradient(colors = GradientHero),
+                            shape = RoundedCornerShape(999.dp)
+                        )
                 )
             }
         }
@@ -703,324 +464,519 @@ private fun CategoryCard(
 }
 
 @Composable
-private fun FolderActionButton(
-    label: String,
-    icon: ImageVector,
-    onClick: () -> Unit,
-    containerColor: Color,
-    contentColor: Color
+private fun WeeklyChartCard(
+    chartState: WeeklyExpenseChartUiState,
+    onChartPeriodSelected: (com.paytrack.viewmodel.TimePeriod) -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
-            .background(containerColor)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = contentColor,
-            modifier = Modifier.size(15.dp)
-        )
-        Text(
-            text = label,
-            color = contentColor,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold
-        )
-    }
-}
-
-@Composable
-private fun AddCategoryCard(onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .border(
-                width = 1.dp,
-                color = AppBorder,
-                shape = RoundedCornerShape(28.dp)
-            ),
-        shape = RoundedCornerShape(28.dp),
-        color = Color.Transparent
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 16.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFFF4F4F1)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Add,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(10.dp))
-            Text(
-                text = "Add New Folder",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
-    }
-}
-
-@Composable
-private fun RecentTransactionsCard(transactions: List<RecentTransactionUiState>) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = AppSurfaceMuted),
-        shape = RoundedCornerShape(22.dp)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            Text(
-                text = "Recent Transactions",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center
-            )
-
-            if (transactions.isEmpty()) {
-                Text(
-                    text = "No QR payments recorded yet.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                transactions.forEachIndexed { index, transaction ->
-                    TransactionRow(transaction = transaction)
-                    if (index != transactions.lastIndex) {
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.8f))
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Expense Trend", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    com.paytrack.viewmodel.TimePeriod.values().forEach { period ->
+                        val isSelected = chartState.selectedChartPeriod == period
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent)
+                                .clickable { onChartPeriodSelected(period) }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = period.name.lowercase().replaceFirstChar { it.uppercase() },
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                            )
+                        }
                     }
                 }
+            }
+            
+            if (chartState.isEmpty) {
+                Text("No expenses recorded for this period yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                WeeklyExpenseChart(
+                    data = chartState.values,
+                    labels = chartState.labels,
+                    currentDayIndex = chartState.currentDayIndex,
+                    isLineGraph = chartState.isLineGraph,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }
 }
 
 @Composable
-private fun TransactionRow(transaction: RecentTransactionUiState) {
+private fun SectionTitle(title: String) {
+    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+}
+
+@Composable
+private fun FolderSectionHeader(onCreateFolder: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
+        SectionTitle(title = "My Folders")
+        Text(
+            text = "+ Create",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.clickable(onClick = onCreateFolder)
+        )
+    }
+}
+
+
+
+@Composable
+private fun CategorySummaryRow(title: String, value: String, color: Color) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.9f)),
+                    .size(40.dp)
+                    .background(color.copy(alpha = 0.15f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.LocalCafe,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(14.dp)
+                Text(
+                    text = title.firstOrNull()?.uppercase() ?: "?",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = color
                 )
             }
+            Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        }
+    }
+}
 
-            Column {
-                Text(
-                    text = transaction.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
+@Composable
+private fun FolderProgressRing(
+    progress: Float,
+    hasLimit: Boolean,
+    initial: String
+) {
+    val Teal = Color(0xFF0F766E)
+    val Amber = Color(0xFFB45309)
+    val Red = Color(0xFFB42318)
+    val TrackColor = Color(0xFFE4E7EC)
+    
+    val ringColor = when {
+        progress < 0.8f -> Teal
+        progress < 1.0f -> Amber
+        else -> Red
+    }
+    
+    Box(
+        modifier = Modifier.size(52.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+            val strokeWidth = 4.5.dp.toPx()
+            if (!hasLimit) {
+                drawCircle(
+                    color = TrackColor,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                        width = strokeWidth,
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f))
+                    )
                 )
-                Text(
-                    text = transaction.subtitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                drawCircle(
+                    color = TrackColor,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeWidth)
                 )
-                Text(
-                    text = transaction.time,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                drawArc(
+                    color = ringColor,
+                    startAngle = -90f,
+                    sweepAngle = (progress * 360f).coerceIn(0f, 360f),
+                    useCenter = false,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                        width = strokeWidth,
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round
+                    )
                 )
             }
         }
-
-        Text(
-            text = transaction.amount,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold,
-            color = if (transaction.isExpense) AppCoral else Color(0xFF23A98B)
-        )
+        
+        if (!hasLimit) {
+            Text(
+                text = initial,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF101828)
+            )
+        } else {
+            val percentString = "${(progress * 100).toInt()}%"
+            Text(
+                text = percentString,
+                style = androidx.compose.ui.text.TextStyle(
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Default,
+                    fontSize = androidx.compose.ui.unit.TextUnit(12f, androidx.compose.ui.unit.TextUnitType.Sp),
+                    fontWeight = FontWeight.Bold
+                ),
+                color = Color(0xFF101828)
+            )
+        }
     }
 }
 
 @Composable
-private fun ProgressTrack(
-    progress: Float,
-    progressColor: Color
+private fun FolderCard(
+    folder: FolderUiState,
+    usage: FolderUsageUiState?,
+    onSetLimit: () -> Unit,
+    onDeleteFolder: (String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(6.dp)
-            .clip(RoundedCornerShape(50))
-            .background(AppProgressTrack)
+    val Teal = Color(0xFF0F766E)
+    val Amber = Color(0xFFB45309)
+    val Red = Color(0xFFB42318)
+    val TextMain = Color(0xFF101828)
+    val BorderColor = Color(0xFFE4E7EC)
+    
+    val hasLimit = folder.hasLimit
+    val progress = usage?.progress ?: 0f
+    
+    val ringColor = when {
+        progress < 0.8f -> Teal
+        progress < 1.0f -> Amber
+        else -> Red
+    }
+    
+    val statusText = when {
+        !hasLimit -> "No limit set"
+        progress < 0.8f -> "On track"
+        progress < 1.0f -> "Nearly there"
+        else -> "Over limit"
+    }
+    
+    var showDropdown by remember { mutableStateOf(false) }
+    
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(progress.coerceIn(0f, 1f))
-                .height(6.dp)
-                .clip(RoundedCornerShape(50))
-                .background(progressColor)
-        )
+        Column(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FolderProgressRing(progress = progress, hasLimit = hasLimit, initial = folder.name.take(1).uppercase())
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = folder.name,
+                        style = androidx.compose.ui.text.TextStyle(
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Default,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = androidx.compose.ui.unit.TextUnit(16f, androidx.compose.ui.unit.TextUnitType.Sp)
+                        ),
+                        color = TextMain
+                    )
+                    Text(
+                        text = statusText,
+                        style = androidx.compose.ui.text.TextStyle(
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Default,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = androidx.compose.ui.unit.TextUnit(12f, androidx.compose.ui.unit.TextUnitType.Sp)
+                        ),
+                        color = ringColor
+                    )
+                }
+                
+                Box {
+                    IconButton(onClick = { showDropdown = true }) {
+                        Icon(
+                            imageVector = Icons.Outlined.MoreHoriz,
+                            contentDescription = "Options",
+                            tint = Color(0xFF98A2B3)
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showDropdown,
+                        onDismissRequest = { showDropdown = false },
+                        modifier = Modifier.background(Color.White)
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Set limit", color = TextMain) },
+                            onClick = { 
+                                showDropdown = false
+                                onSetLimit() 
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Rename", color = TextMain) },
+                            onClick = { showDropdown = false }
+                        )
+                        if (folder.isRemovable) {
+                            DropdownMenuItem(
+                                text = { Text("Delete", color = ExpenseRed) },
+                                onClick = { 
+                                    showDropdown = false
+                                    onDeleteFolder(folder.name)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+            
+            HorizontalDivider(color = BorderColor, thickness = 1.dp)
+            
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                if (hasLimit) {
+                    val spent = usage?.usedAmount ?: "₹0"
+                    val limitStr = usage?.totalAmount ?: "₹0"
+                    val formatter = java.text.SimpleDateFormat("dd MMM", java.util.Locale.ENGLISH)
+                    val dateStr = folder.limitEndDateMillis?.let { formatter.format(java.util.Date(it)) } ?: ""
+                    Text(
+                        text = "$spent / $limitStr",
+                        style = androidx.compose.ui.text.TextStyle(
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Default,
+                            fontSize = androidx.compose.ui.unit.TextUnit(13f, androidx.compose.ui.unit.TextUnitType.Sp),
+                            fontWeight = FontWeight.Medium,
+                            fontFeatureSettings = "tnum"
+                        ),
+                        color = TextMain
+                    )
+                    Text(
+                        text = "till $dateStr",
+                        style = androidx.compose.ui.text.TextStyle(
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Default,
+                            fontSize = androidx.compose.ui.unit.TextUnit(13f, androidx.compose.ui.unit.TextUnitType.Sp),
+                            fontWeight = FontWeight.Medium
+                        ),
+                        color = Color(0xFF98A2B3)
+                    )
+                } else {
+                    Text(
+                        text = "Set a limit to track this folder",
+                        style = androidx.compose.ui.text.TextStyle(
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Default,
+                            fontSize = androidx.compose.ui.unit.TextUnit(13f, androidx.compose.ui.unit.TextUnitType.Sp),
+                            fontWeight = FontWeight.Medium
+                        ),
+                        color = Teal,
+                        modifier = Modifier.clickable { onSetLimit() }
+                    )
+                }
+            }
+        }
     }
 }
 
-private fun categoryIcon(name: String): ImageVector {
-    return when {
-        "Dining" in name -> Icons.Outlined.Restaurant
-        "Grocery" in name -> Icons.Outlined.ShoppingCart
-        else -> Icons.Outlined.DirectionsBus
-    }
-}
-
-@Preview(
-    name = "Home - Filled",
-    showBackground = true,
-    showSystemUi = true,
-    heightDp = 920,
-    widthDp = 412
-)
 @Composable
-private fun HomeScreenFilledPreview() {
-    PayTrackTheme {
-        HomeScreen(
-            uiState = HomeUiState(
-                appName = "PayTrack",
-                monthLabel = "April 2026",
-                availableBudget = "\u20b92,200.00",
-                spentAmount = "\u20b9335.00",
-                budgetProgress = 0.4f,
-                budgetProgressLabel = "5 payments tracked from folders",
-                insights = listOf(
-                    InsightCardUiState(
-                        title = "Folder Availability",
-                        status = "Live",
-                        description = "Current total balance across all folders after recorded QR payments.",
-                        progressLabel = "BALANCE",
-                        progressValue = "\u20b92,200.00",
-                        progress = 1f
-                    )
-                ),
-                folderSpendChart = listOf(
-                    FolderTransactionChartUiState(
-                        name = "Dining",
-                        amount = 820.0,
-                        accentColor = 0xFF5CC9C0
-                    ),
-                    FolderTransactionChartUiState(
-                        name = "Grocery",
-                        amount = 460.0,
-                        accentColor = 0xFFFF8D8D
-                    ),
-                    FolderTransactionChartUiState(
-                        name = "Travel",
-                        amount = 290.0,
-                        accentColor = 0xFF7DA6FF
-                    )
-                ),
-                isFolderSpendChartEmpty = false,
-                highlightCard = HighlightCardUiState(
-                    title = "UPI payments are being tracked",
-                    subtitle = "Cafe payment updated your budgets."
-                ),
-                folders = listOf(
-                    BudgetCategoryUiState(
-                        id = "1",
-                        name = "Dining & Drinks",
-                        amount = "\u20b91,200.00",
-                        accentColor = 0xFF5CC9C0
-                    ),
-                    BudgetCategoryUiState(
-                        id = "2",
-                        name = "Grocery",
-                        amount = "\u20b9600.00",
-                        accentColor = 0xFFFF8D8D
-                    )
-                ),
-                recentTransactions = listOf(
-                    RecentTransactionUiState(
-                        title = "Artisan Brews",
-                        subtitle = "Dining & Drinks via GPay",
-                        time = "02 Apr, 09:42 AM",
-                        amount = "-\u20b914.50",
-                        isExpense = true
-                    )
-                ),
-                isLoading = false
-            ),
-            onAddCategory = {},
-            onEditCategory = {},
-            onDeleteCategory = {},
-            onOpenQr = {},
-            onOpenInsights = {}
+private fun EmptyCard(message: String) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = message,
+            modifier = Modifier.padding(24.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
 
-@Preview(
-    name = "Home - Empty",
-    showBackground = true,
-    showSystemUi = true,
-    heightDp = 920,
-    widthDp = 412
-)
 @Composable
-private fun HomeScreenEmptyPreview() {
-    PayTrackTheme {
-        HomeScreen(
-            uiState = HomeUiState(
-                appName = "PayTrack",
-                monthLabel = "April 2026",
-                availableBudget = "\u20b90.00",
-                spentAmount = "\u20b90.00",
-                budgetProgress = 0f,
-                budgetProgressLabel = "Start tracking payments from your folders",
-                folderSpendChart = emptyList(),
-                isFolderSpendChartEmpty = true,
-                highlightCard = HighlightCardUiState(
-                    title = "Ready for your first QR payment",
-                    subtitle = "Scan a merchant QR to deduct directly from a folder."
-                ),
-                folders = emptyList(),
-                recentTransactions = emptyList(),
-                isLoading = false
-            ),
-            onAddCategory = {},
-            onEditCategory = {},
-            onDeleteCategory = {},
-            onOpenQr = {},
-            onOpenInsights = {}
-        )
+private fun CreateFolderDialog(
+    onDismiss: () -> Unit,
+    errorMessage: String?,
+    onCreateFolder: (String) -> Unit
+) {
+    var folderName by rememberSaveable { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Create Folder", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = folderName,
+                    onValueChange = { folderName = it },
+                    label = { Text("Folder Name") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                errorMessage?.let {
+                    Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onCreateFolder(folderName) }) {
+                Text("Create", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        shape = RoundedCornerShape(28.dp),
+        containerColor = MaterialTheme.colorScheme.surface
+    )
+}
+
+@Composable
+private fun EditFolderLimitDialog(
+    folder: FolderUiState,
+    errorMessage: String?,
+    onDismiss: () -> Unit,
+    onSave: (Double, Long) -> Unit,
+    onClearLimit: () -> Unit
+) {
+    val context = LocalContext.current
+    var amount by rememberSaveable(folder.name) {
+        mutableStateOf(folder.limitAmount?.toString().orEmpty())
     }
+    var endDate by rememberSaveable(folder.name) { mutableStateOf(folder.limitEndDateMillis) }
+    var localError by remember(folder.name) { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit ${folder.name}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = {
+                        amount = it
+                        localError = null
+                    },
+                    label = { Text("Limit Amount") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = endDate?.let { "Deadline: ${formatDisplayDate(it)}" } ?: "No deadline",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "Change",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable {
+                            val calendar = Calendar.getInstance().apply {
+                                timeInMillis = endDate ?: System.currentTimeMillis()
+                            }
+                            DatePickerDialog(
+                                context,
+                                { _, year, month, dayOfMonth ->
+                                    endDate = Calendar.getInstance().apply {
+                                        set(Calendar.YEAR, year)
+                                        set(Calendar.MONTH, month)
+                                        set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                                        set(Calendar.HOUR_OF_DAY, 12)
+                                        set(Calendar.MINUTE, 0)
+                                        set(Calendar.SECOND, 0)
+                                        set(Calendar.MILLISECOND, 0)
+                                    }.timeInMillis
+                                },
+                                calendar.get(Calendar.YEAR),
+                                calendar.get(Calendar.MONTH),
+                                calendar.get(Calendar.DAY_OF_MONTH)
+                            ).show()
+                        }
+                    )
+                }
+
+                (localError ?: errorMessage)?.let {
+                    Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val parsedAmount = amount.toDoubleOrNull()
+                    when {
+                        parsedAmount == null || parsedAmount <= 0.0 -> localError = "Enter a valid limit amount."
+                        endDate == null -> localError = "Choose a deadline."
+                        else -> onSave(parsedAmount, endDate!!)
+                    }
+                }
+            ) {
+                Text("Save", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (folder.hasLimit) {
+                    TextButton(onClick = onClearLimit) {
+                        Text("Clear", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Close")
+                }
+            }
+        },
+        shape = RoundedCornerShape(28.dp),
+        containerColor = MaterialTheme.colorScheme.surface
+    )
+}
+
+private fun formatDisplayDate(timeMillis: Long): String {
+    return java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.ENGLISH).format(Date(timeMillis))
 }

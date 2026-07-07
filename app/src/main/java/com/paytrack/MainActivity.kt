@@ -5,21 +5,36 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.paytrack.data.PayTrackDatabase
 import com.paytrack.data.FinanceRepository
+import com.paytrack.data.UserRepository
 import com.paytrack.navigation.FinanceNavGraph
 import com.paytrack.ui.theme.PayTrackTheme
 import com.paytrack.viewmodel.HomeViewModel
 import com.paytrack.viewmodel.HomeViewModelFactory
+import com.paytrack.viewmodel.ProfileViewModel
+import com.paytrack.viewmodel.ProfileViewModelFactory
 
 class MainActivity : ComponentActivity() {
 
-    private val viewModel: HomeViewModel by viewModels {
+    private val financeRepository by lazy { FinanceRepository.getInstance(applicationContext) }
+    private val userRepository by lazy {
+        UserRepository(
+            context = applicationContext,
+            userDao = PayTrackDatabase.getInstance(applicationContext).userDao()
+        )
+    }
+
+    private val homeViewModel: HomeViewModel by viewModels {
         HomeViewModelFactory(
-            repository = FinanceRepository(applicationContext),
+            repository = financeRepository,
             appContext = applicationContext
         )
+    }
+
+    private val profileViewModel: ProfileViewModel by viewModels {
+        ProfileViewModelFactory(userRepository = userRepository)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,12 +42,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
-            PayTrackTheme {
+            val profileUiState = profileViewModel.uiState.collectAsStateWithLifecycle().value
+            PayTrackTheme(darkTheme = profileUiState.isDarkMode) {
                 FinanceNavGraph(
-                    uiState = uiState,
-                    viewModel = viewModel
+                    homeViewModel = homeViewModel,
+                    profileViewModel = profileViewModel
                 )
             }
         }

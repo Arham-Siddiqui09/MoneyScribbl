@@ -2,22 +2,31 @@ package com.paytrack.viewmodel
 
 import android.content.Context
 import android.content.Intent
+import android.app.Activity
+import android.os.SystemClock
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
-import com.paytrack.data.Category
+import com.paytrack.data.Folder
 import com.paytrack.data.FinanceRepository
-import com.paytrack.data.PaymentTransaction
-import com.paytrack.payment.PendingPayment
+import com.paytrack.data.FinanceTransaction
+import com.paytrack.data.FALLBACK_FOLDER
+import com.paytrack.data.SavingsGoal
+import com.paytrack.data.TransactionSource
+import com.paytrack.data.TransactionType
 import com.paytrack.payment.ParsedUpiQr
 import com.paytrack.payment.UpiAppResolver
+import com.paytrack.payment.UpiPaymentRequest
+import com.paytrack.payment.UpiPaymentResultParser
 import com.paytrack.payment.UpiQrParser
-import java.util.Calendar
+import com.paytrack.sms.SmsImporter
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,20 +35,27 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
-private const val PENDING_PAYMENT_KEY = "pending_payment_json"
 private const val SCANNED_QR_KEY = "scanned_qr_value"
 private const val AMOUNT_INPUT_KEY = "amount_input"
-private const val SELECTED_FOLDER_KEY = "selected_folder_id"
+private const val SELECTED_CATEGORY_KEY = "selected_category"
 
 class HomeViewModel(
     private val repository: FinanceRepository,
     private val appContext: Context,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
+    private var lastUpiLaunchAtMillis: Long = 0L
+    private var pendingUpiPackageName: String? = null
+    private var lastAttemptedUpiPackageName: String? = null
 
-    private val _uiState = MutableStateFlow(HomeUiState())
-    val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    private val _homeUiState = MutableStateFlow(HomeUiState())
+    val homeUiState: StateFlow<HomeUiState> = _homeUiState.asStateFlow()
+
+    private val _transactionsUiState = MutableStateFlow(TransactionsUiState())
+    val transactionsUiState: StateFlow<TransactionsUiState> = _transactionsUiState.asStateFlow()
 
     private val _insightsUiState = MutableStateFlow(InsightsUiState())
     val insightsUiState: StateFlow<InsightsUiState> = _insightsUiState.asStateFlow()
@@ -47,64 +63,179 @@ class HomeViewModel(
     private val _qrUiState = MutableStateFlow(QrScanUiState())
     val qrUiState: StateFlow<QrScanUiState> = _qrUiState.asStateFlow()
 
+    private val allTransactions = MutableStateFlow<List<FinanceTransaction>>(emptyList())
+    private val savingsGoal = MutableStateFlow<SavingsGoal?>(null)
+    private val allFolders = MutableStateFlow<List<Folder>>(emptyList())
+
     private val currencyFormatter = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("en-IN"))
-    private val monthFormatter = SimpleDateFormat("MMMM yyyy", Locale.ENGLISH)
+    private val dateFormatter = SimpleDateFormat("dd MMM yyyy", Locale.ENGLISH)
     private val timeFormatter = SimpleDateFormat("dd MMM, hh:mm a", Locale.ENGLISH)
 
     init {
-        loadInitialData()
+        observeData()
+        refreshInstalledUpiApps()
     }
 
-    private fun loadInitialData() {
+    private fun observeData() {
         viewModelScope.launch {
-            repository.ensureDefaultCategories()
             combine(
-                repository.getCategories(),
-                repository.getTransactions()
-            ) { categories, transactions ->
-                categories to transactions
-            }.collect { (categories, transactions) ->
-                updateHomeState(categories, transactions)
-                updateInsightsState(categories, transactions)
-                syncQrState(categories)
+                repository.getTransactions(),
+                repository.getSavingsGoal(),
+                repository.getFolders()
+            ) { transactions, goal, folders ->
+                Triple(transactions, goal, folders)
+            }.collect { (transactions, goal, folders) ->
+                allTransactions.value = transactions
+                savingsGoal.value = goal
+                allFolders.value = folders
+                updateHomeState(transactions, goal, folders)
+                updateTransactionsState(transactions, folders)
+                updateInsightsState(transactions)
+                syncQrState(folders)
             }
         }
     }
 
-    fun updateTransactionBarPeriod(period: TransactionBarPeriod) {
-        _insightsUiState.update { currentState ->
-            currentState.copy(selectedTransactionBarPeriod = period)
+    fun updateTransactionSearchQuery(query: String) {
+        _transactionsUiState.update { it.copy(query = query) }
+        updateTransactionsState(allTransactions.value, allFolders.value)
+    }
+
+    fun updateTransactionTypeFilter(type: TransactionType?) {
+        _transactionsUiState.update { it.copy(selectedType = type) }
+        updateTransactionsState(allTransactions.value, allFolders.value)
+    }
+
+    fun updateTransactionCategoryFilter(category: String?) {
+        _transactionsUiState.update { it.copy(selectedCategory = category) }
+        updateTransactionsState(allTransactions.value, allFolders.value)
+    }
+
+    fun saveTransaction(
+        id: String?,
+        amount: Double,
+        type: TransactionType,
+        category: String,
+        dateMillis: Long,
+        note: String
+    ) {
+        viewModelScope.launch {
+            if (id == null) {
+                repository.addTransaction(
+                    amount = amount,
+                    type = type,
+                    category = category,
+                    dateMillis = dateMillis,
+                    note = note
+                )
+            } else {
+                val existing = repository.getTransaction(id) ?: return@launch
+                repository.updateTransaction(
+                    existing.copy(
+                        amount = amount,
+                        type = type,
+                        category = category,
+                        dateMillis = dateMillis,
+                        note = note.trim().takeIf(String::isNotBlank)
+                    )
+                )
+            }
         }
     }
 
-    fun createCategory(name: String, amount: Double) {
+    fun deleteTransaction(id: String) {
         viewModelScope.launch {
-            repository.createCategory(
-                name = name.trim(),
-                amount = amount
+            repository.deleteTransaction(id)
+        }
+    }
+
+    suspend fun getTransactionFormData(transactionId: String?): TransactionFormData {
+        val defaultCategory = allFolders.value.firstOrNull()?.name ?: FALLBACK_FOLDER
+        if (transactionId.isNullOrBlank()) {
+            return TransactionFormData(category = defaultCategory)
+        }
+        val transaction = repository.getTransaction(transactionId)
+        return if (transaction == null) {
+            TransactionFormData(category = defaultCategory)
+        } else {
+            TransactionFormData(
+                id = transaction.id,
+                amount = transaction.amount,
+                type = transaction.type,
+                category = transaction.category,
+                dateMillis = transaction.dateMillis,
+                note = transaction.note.orEmpty()
             )
         }
     }
 
-    fun updateCategory(id: String, name: String, amount: Double) {
+    fun createFolder(name: String) {
+        val trimmedName = name.trim()
+        when {
+            trimmedName.isBlank() -> updateFolderMessage("Enter a folder name.")
+            allFolders.value.any { it.name.equals(trimmedName, ignoreCase = true) } -> {
+                updateFolderMessage("A folder with that name already exists.")
+            }
+            else -> {
+                viewModelScope.launch {
+                    repository.addFolder(trimmedName)
+                    updateFolderMessage(null)
+                }
+            }
+        }
+    }
+
+    fun deleteFolder(name: String) {
+        if (name.equals(FALLBACK_FOLDER, ignoreCase = true)) {
+            updateFolderMessage("The Other folder cannot be deleted.")
+            return
+        }
+
         viewModelScope.launch {
-            repository.updateCategory(
-                id = id,
-                name = name.trim(),
-                amount = amount
+            repository.deleteFolder(name)
+            updateFolderMessage(null)
+        }
+    }
+
+    fun clearFolderMessage() {
+        updateFolderMessage(null)
+    }
+
+    fun saveFolderLimit(name: String, limitAmount: Double, limitEndDateMillis: Long) {
+        viewModelScope.launch {
+            repository.updateFolderLimit(
+                name = name,
+                limitAmount = limitAmount,
+                limitStartDateMillis = System.currentTimeMillis(),
+                limitEndDateMillis = endOfDay(limitEndDateMillis)
+            )
+            updateFolderMessage(null)
+        }
+    }
+
+    fun clearFolderLimit(name: String) {
+        viewModelScope.launch {
+            repository.clearFolderLimit(name)
+            updateFolderMessage(null)
+        }
+    }
+
+    fun getGoalFormData(): SavingsGoalFormData {
+        val goal = savingsGoal.value
+        return if (goal == null) {
+            SavingsGoalFormData()
+        } else {
+            SavingsGoalFormData(
+                targetAmount = goal.targetAmount,
+                targetDateMillis = goal.targetDateMillis
             )
         }
     }
 
-    fun deleteCategory(id: String) {
+    fun saveSavingsGoal(targetAmount: Double, targetDateMillis: Long?) {
         viewModelScope.launch {
-            repository.deleteCategory(id)
+            repository.saveSavingsGoal(SavingsGoal(targetAmount = targetAmount, targetDateMillis = targetDateMillis))
         }
-    }
-
-    fun getCategory(categoryId: String?): BudgetCategoryUiState? {
-        if (categoryId.isNullOrBlank()) return null
-        return _uiState.value.folders.firstOrNull { it.id == categoryId }
     }
 
     fun setCameraPermission(granted: Boolean) {
@@ -115,28 +246,24 @@ class HomeViewModel(
         val parsed = UpiQrParser.parse(rawValue)
         if (parsed == null) {
             _qrUiState.update {
-                it.copy(
-                    scanError = "This QR is not a supported UPI payment code.",
-                    paymentError = null
-                )
+                it.copy(scanError = "This QR is not a supported UPI payment code.", paymentError = null)
             }
             return
         }
 
-        savedStateHandle[SCANNED_QR_KEY] = rawValue
+        savedStateHandle[SCANNED_QR_KEY] = rawValue.trim()
         if (parsed.amount != null && savedStateHandle.get<String>(AMOUNT_INPUT_KEY).isNullOrBlank()) {
-            savedStateHandle[AMOUNT_INPUT_KEY] = parsed.amount.toString()
+            savedStateHandle[AMOUNT_INPUT_KEY] = String.format(Locale.US, "%.2f", parsed.amount)
         }
 
-        _qrUiState.update { currentState ->
-            val amountText = savedStateHandle.get<String>(AMOUNT_INPUT_KEY)?.takeUnless { it.isBlank() }
-                ?: parsed.amount?.toString().orEmpty()
-            currentState.copy(
+        _qrUiState.update {
+            it.copy(
                 scannedMerchantName = parsed.payeeName,
                 scannedPayeeVpa = parsed.payeeVpa,
                 scannedNote = parsed.note,
                 scannedAmountText = parsed.amount?.let(currencyFormatter::format).orEmpty(),
-                amountInput = amountText,
+                amountInput = savedStateHandle.get<String>(AMOUNT_INPUT_KEY)
+                    ?: parsed.amount?.let { String.format(Locale.US, "%.2f", it) }.orEmpty(),
                 isAmountLocked = parsed.hasEmbeddedAmount,
                 scanError = null,
                 paymentError = null
@@ -148,7 +275,6 @@ class HomeViewModel(
     fun clearScannedQr() {
         savedStateHandle[SCANNED_QR_KEY] = null
         savedStateHandle[AMOUNT_INPUT_KEY] = null
-        savedStateHandle[PENDING_PAYMENT_KEY] = null
         _qrUiState.update {
             it.copy(
                 scannedMerchantName = "",
@@ -157,17 +283,18 @@ class HomeViewModel(
                 scannedAmountText = "",
                 amountInput = "",
                 isAmountLocked = false,
-                pendingConfirmation = null,
                 scanError = null,
                 paymentError = null,
                 canLaunchPayment = false
             )
         }
+        pendingUpiPackageName = null
+        lastAttemptedUpiPackageName = null
         refreshQrDerivedState()
     }
 
-    fun updateSelectedFolder(folderId: String) {
-        savedStateHandle[SELECTED_FOLDER_KEY] = folderId
+    fun updateSelectedQrCategory(category: String) {
+        savedStateHandle[SELECTED_CATEGORY_KEY] = category
         refreshQrDerivedState()
     }
 
@@ -179,392 +306,539 @@ class HomeViewModel(
     }
 
     fun refreshInstalledUpiApps() {
+        val apps = UpiAppResolver.resolve(appContext).map(::upiAppToUiState)
         _qrUiState.update {
             it.copy(
-                availableUpiApps = UpiAppResolver.resolve(appContext).map(::upiAppToUiState),
-                paymentError = null
+                availableUpiApps = apps,
+                paymentError = if (apps.isEmpty()) {
+                    "No compatible UPI app is installed on this device."
+                } else {
+                    null
+                }
             )
         }
         refreshQrDerivedState()
     }
 
     fun buildUpiLaunchIntent(packageName: String): Intent? {
-        currentParsedPayload() ?: return markPaymentError("Scan a valid UPI QR code first.")
-        selectedFolder() ?: return markPaymentError("Choose a folder before opening a UPI app.")
-        enteredAmount() ?: return markPaymentError("Enter a valid amount greater than zero.")
+        val payload = currentParsedPayload() ?: return markQrError("Scan a valid UPI QR code first.")
+        selectedQrCategory() ?: return markQrError("Choose a category before opening a UPI app.")
+        val paymentRequest = buildPaymentRequest(payload)
+            ?: return markQrError("Enter a valid UPI ID and amount before opening a UPI app.")
         val selectedApp = _qrUiState.value.availableUpiApps.firstOrNull { it.packageName == packageName }
-            ?: return markPaymentError("The selected UPI app is no longer available.")
-        return UpiAppResolver.launchIntent(appContext, selectedApp.packageName)
-            ?: markPaymentError("Unable to open the selected UPI app on this device.")
-    }
-
-    fun recordPaymentWhenUpiAppOpened(packageName: String) {
-        val payload = currentParsedPayload() ?: return
-        val selectedFolder = selectedFolder() ?: return
-        val amount = enteredAmount() ?: return
-        val selectedApp = _qrUiState.value.availableUpiApps.firstOrNull { it.packageName == packageName } ?: return
-
-        viewModelScope.launch {
-            repository.recordSuccessfulPayment(
-                folderId = selectedFolder.id,
-                merchantName = payload.payeeName,
-                amount = amount,
-                upiAppPackage = selectedApp.packageName,
-                upiAppLabel = "${selectedApp.label} (Rescan)",
-                payeeVpa = payload.payeeVpa,
-                note = payload.note
-            )
-            savedStateHandle[PENDING_PAYMENT_KEY] = null
-            savedStateHandle[SCANNED_QR_KEY] = null
-            savedStateHandle[AMOUNT_INPUT_KEY] = null
-            _qrUiState.update {
-                it.copy(
-                    scannedMerchantName = "",
-                    scannedPayeeVpa = "",
-                    scannedNote = null,
-                    scannedAmountText = "",
-                    amountInput = "",
-                    isAmountLocked = false,
-                    pendingConfirmation = null,
-                    paymentError = null,
-                    scanError = null
-                )
-            }
-            refreshQrDerivedState()
+            ?: return markQrError("The selected UPI app is no longer available.")
+        if (isRapidRepeatLaunch()) {
+            return markQrError("Please wait 2 seconds before retrying the payment app.")
+        }
+        pendingUpiPackageName = selectedApp.packageName
+        lastAttemptedUpiPackageName = selectedApp.packageName
+        return UpiAppResolver.launchIntent(
+            context = appContext,
+            packageName = selectedApp.packageName,
+            upiId = paymentRequest.upiId,
+            name = paymentRequest.payeeName,
+            amount = paymentRequest.amount,
+            note = paymentRequest.note,
+            rawUri = paymentRequest.rawUri
+        ) ?: run {
+            pendingUpiPackageName = null
+            markQrError("Unable to open the selected UPI app on its payment screen.")
         }
     }
 
-    fun startManualPaymentConfirmation() {
-        val payload = currentParsedPayload() ?: run {
-            markPaymentError("Scan a valid UPI QR code first.")
-            return
+    /**
+     * Opens the chosen UPI app directly (its home/scanner screen) without any payment URI.
+     * The user scans the QR inside the UPI app, enters the amount, and pays.
+     * When the user returns, call [onReturnFromUpiApp] to show the confirm dialog.
+     */
+    fun openUpiAppDirectly(packageName: String): Intent? {
+        val amount = enteredAmount() ?: return markQrError("Enter a valid amount before opening a UPI app.")
+        val category = selectedQrCategory() ?: return markQrError("Choose a folder before opening a UPI app.")
+        val selectedApp = _qrUiState.value.availableUpiApps.firstOrNull { it.packageName == packageName }
+            ?: return markQrError("The selected UPI app is no longer available.")
+        if (isRapidRepeatLaunch()) {
+            return markQrError("Please wait 2 seconds before retrying.")
         }
-        val selectedFolder = selectedFolder() ?: run {
-            markPaymentError("Choose a folder before recording the payment.")
-            return
-        }
-        val amount = enteredAmount() ?: run {
-            markPaymentError("Enter a valid amount greater than zero.")
-            return
-        }
+        val launchIntent = appContext.packageManager.getLaunchIntentForPackage(packageName)
+            ?: return markQrError("Could not open ${selectedApp.label}. Is it installed?")
 
-        val pendingPayment = PendingPayment(
-            folderId = selectedFolder.id,
-            folderName = selectedFolder.name,
-            merchantName = payload.payeeName,
-            amount = amount,
-            upiAppPackage = "manual.external",
-            upiAppLabel = "Manual UPI Payment",
-            payeeVpa = payload.payeeVpa,
-            note = payload.note,
-            rawQrValue = payload.rawValue
-        )
-        savedStateHandle[PENDING_PAYMENT_KEY] = pendingPayment.toJson()
-
+        // Store pending info so the confirm dialog can show it on return
         _qrUiState.update {
             it.copy(
-                pendingConfirmation = PendingConfirmationUiState(
-                    merchantName = payload.payeeName,
-                    folderName = selectedFolder.name,
-                    amount = currencyFormatter.format(amount),
-                    appLabel = "Manual UPI Payment"
-                ),
+                pendingConfirmAmount = String.format(Locale.US, "%.2f", amount),
+                pendingConfirmCategory = category,
+                pendingConfirmAppLabel = selectedApp.label,
                 paymentError = null
+            )
+        }
+        pendingUpiPackageName = packageName
+        lastAttemptedUpiPackageName = packageName
+        return launchIntent
+    }
+
+    /** Called when the user returns from the UPI app — shows the "Did it go through?" dialog. */
+    fun onReturnFromUpiApp() {
+        val state = _qrUiState.value
+        if (state.pendingConfirmAmount.isBlank()) return
+        _qrUiState.update { it.copy(showPaymentConfirmDialog = true) }
+    }
+
+    /** User tapped "Yes, log it" in the confirm dialog. */
+    fun confirmPaymentLogged() {
+        val state = _qrUiState.value
+        val amount = state.pendingConfirmAmount.toDoubleOrNull() ?: return
+        val category = state.pendingConfirmCategory.ifBlank { return }
+        val appLabel = state.pendingConfirmAppLabel
+        viewModelScope.launch {
+            repository.addTransaction(
+                amount = amount,
+                type = com.paytrack.data.TransactionType.EXPENSE,
+                category = category,
+                dateMillis = System.currentTimeMillis(),
+                note = "Paid through ${appLabel.ifBlank { "UPI" }}",
+                upiAppLabel = appLabel.ifBlank { null }
+            )
+        }
+        _qrUiState.update {
+            it.copy(
+                showPaymentConfirmDialog = false,
+                pendingConfirmAmount = "",
+                pendingConfirmCategory = "",
+                pendingConfirmAppLabel = "",
+                amountInput = "",
+                paymentError = null
+            )
+        }
+        savedStateHandle[AMOUNT_INPUT_KEY] = null
+        pendingUpiPackageName = null
+    }
+
+    /** User tapped "No" in the confirm dialog — dismiss without logging. */
+    fun dismissConfirmDialog() {
+        _qrUiState.update {
+            it.copy(
+                showPaymentConfirmDialog = false,
+                pendingConfirmAmount = "",
+                pendingConfirmCategory = "",
+                pendingConfirmAppLabel = ""
+            )
+        }
+        pendingUpiPackageName = null
+    }
+
+    fun onUpiPaymentResult(launchedPackageName: String?, resultCode: Int, data: Intent?) {
+        val result = UpiPaymentResultParser.parse(data)
+        UpiPaymentResultParser.log(result)
+        Log.d(
+            "UpiPaymentFlow",
+            "package=${launchedPackageName ?: pendingUpiPackageName}, resultCode=$resultCode, status=${result.status}, txnId=${result.transactionId}, responseCode=${result.responseCode}"
+        )
+
+        if (result.isSuccess) {
+            recordSuccessfulPayment(launchedPackageName ?: pendingUpiPackageName)
+            return
+        }
+
+        pendingUpiPackageName = null
+        _qrUiState.update {
+            it.copy(
+                paymentError = when {
+                    result.status.equals("failure", ignoreCase = true) ->
+                        buildFailureMessage(result.responseCode)
+                    resultCode == Activity.RESULT_CANCELED && result.rawResponse.isNullOrBlank() ->
+                        "UPI payment was cancelled."
+                    result.status.equals("cancelled", ignoreCase = true) ->
+                        "UPI payment was cancelled."
+                    result.rawResponse.isNullOrBlank() ->
+                        buildUnknownResultMessage()
+                    else ->
+                        "UPI payment did not complete. Status: ${result.status ?: "unknown"}. Try another installed UPI app."
+                }
             )
         }
     }
 
     fun onUpiLaunchFailed() {
-        _qrUiState.update {
-            it.copy(paymentError = "Unable to open the selected UPI app on this device.")
-        }
-    }
-
-    fun confirmPaymentResult(success: Boolean) {
-        val pendingPayment = PendingPayment.fromJson(savedStateHandle[PENDING_PAYMENT_KEY])
-        if (pendingPayment == null) {
-            _qrUiState.update {
-                it.copy(paymentError = "No pending payment was found to confirm.")
-            }
-            return
-        }
-
-        if (!success) {
-            savedStateHandle[PENDING_PAYMENT_KEY] = null
-            _qrUiState.update {
-                it.copy(
-                    pendingConfirmation = null,
-                    paymentError = "Payment was not recorded. Your folder balance is unchanged."
-                )
-            }
-            refreshQrDerivedState()
-            return
-        }
-
-        viewModelScope.launch {
-            repository.recordSuccessfulPayment(
-                folderId = pendingPayment.folderId,
-                merchantName = pendingPayment.merchantName,
-                amount = pendingPayment.amount,
-                upiAppPackage = pendingPayment.upiAppPackage,
-                upiAppLabel = pendingPayment.upiAppLabel,
-                payeeVpa = pendingPayment.payeeVpa,
-                note = pendingPayment.note
-            )
-            savedStateHandle[PENDING_PAYMENT_KEY] = null
-            savedStateHandle[SCANNED_QR_KEY] = null
-            savedStateHandle[AMOUNT_INPUT_KEY] = null
-            _qrUiState.update {
-                it.copy(
-                    scannedMerchantName = "",
-                    scannedPayeeVpa = "",
-                    scannedNote = null,
-                    scannedAmountText = "",
-                    amountInput = "",
-                    isAmountLocked = false,
-                    pendingConfirmation = null,
-                    paymentError = null,
-                    scanError = null
-                )
-            }
-            refreshQrDerivedState()
-        }
-    }
-
-    private fun currentParsedPayload(): ParsedUpiQr? {
-        val rawValue: String? = savedStateHandle[SCANNED_QR_KEY]
-        return rawValue?.let(UpiQrParser::parse)
-    }
-
-    private fun selectedFolder(): FolderPickerUiState? {
-        val selectedId = savedStateHandle.get<String>(SELECTED_FOLDER_KEY)
-        return _qrUiState.value.folders.firstOrNull { it.id == selectedId }
-    }
-
-    private fun enteredAmount(): Double? {
-        return savedStateHandle.get<String>(AMOUNT_INPUT_KEY)?.toDoubleOrNull()?.takeIf { it > 0.0 }
-    }
-
-    private fun refreshQrDerivedState() {
-        val selectedFolder = selectedFolder()
-        val amount = enteredAmount()
-        val canLaunch = currentParsedPayload() != null &&
-            selectedFolder != null &&
-            amount != null &&
-            _qrUiState.value.availableUpiApps.isNotEmpty()
-
+        pendingUpiPackageName = null
+        val alternateApp = _qrUiState.value.availableUpiApps
+            .firstOrNull { it.packageName != lastAttemptedUpiPackageName }
+            ?.label
         _qrUiState.update {
             it.copy(
-                amountInput = savedStateHandle.get<String>(AMOUNT_INPUT_KEY).orEmpty(),
-                selectedFolderId = selectedFolder?.id,
-                selectedFolderBalance = selectedFolder?.balance.orEmpty(),
-                projectedBalance = if (selectedFolder != null && amount != null) {
-                    currencyFormatter.format(selectedFolder.balance.toCurrencyValue() - amount)
+                paymentError = if (alternateApp != null) {
+                    "Unable to open the selected UPI app. Try $alternateApp or use the chooser."
                 } else {
-                    ""
-                },
-                canLaunchPayment = canLaunch
+                    "Unable to open the selected UPI app. No transaction was recorded."
+                }
+            )
+        }
+    }
+
+    fun updateHomeChartPeriod(period: TimePeriod) {
+        val transactions = allTransactions.value
+        val (points, currentIndex) = buildChartPointsForPeriod(transactions, System.currentTimeMillis(), period)
+        _homeUiState.update {
+            it.copy(
+                weeklyExpenseChart = it.weeklyExpenseChart.copy(
+                    values = points.map { point -> point.amount.toFloat() },
+                    labels = points.map { point -> point.label },
+                    currentDayIndex = currentIndex,
+                    isEmpty = points.none { point -> point.amount > 0.0 },
+                    selectedChartPeriod = period,
+                    isLineGraph = period != TimePeriod.WEEK
+                )
+            )
+        }
+    }
+
+    fun updateInsightsChartPeriod(period: TimePeriod) {
+        val transactions = allTransactions.value
+        val (points, _) = buildChartPointsForPeriod(transactions, System.currentTimeMillis(), period)
+        _insightsUiState.update {
+            it.copy(
+                monthlyTrendPoints = points,
+                selectedTimePeriod = period,
+                isLineGraph = period != TimePeriod.WEEK
             )
         }
     }
 
     private fun updateHomeState(
-        categories: List<Category>,
-        transactions: List<PaymentTransaction>
+        transactions: List<FinanceTransaction>,
+        goal: SavingsGoal?,
+        folders: List<Folder>
     ) {
-        val totalFolderAmount = categories.sumOf(Category::amount)
-        val totalSpent = transactions.sumOf(PaymentTransaction::amount)
-        val recentTransactions = transactions.take(5).map(::transactionToUiState)
-
-        _uiState.update {
+        val totalIncome = transactions.filter { it.type == TransactionType.INCOME }.sumOf(FinanceTransaction::amount)
+        val totalExpenses = transactions.filter { it.type == TransactionType.EXPENSE }.sumOf(FinanceTransaction::amount)
+        val savedAmount = calculateSavedAmount(transactions)
+        val folderUsage = buildFolderUsageInsights(folders, transactions)
+        
+        val currentPeriod = _homeUiState.value.weeklyExpenseChart.selectedChartPeriod
+        val (points, currentIndex) = buildChartPointsForPeriod(transactions, System.currentTimeMillis(), currentPeriod)
+        
+        _homeUiState.update {
             it.copy(
-                appName = "PayTrack",
-                monthLabel = monthFormatter.format(Date()),
-                availableBudget = currencyFormatter.format(totalFolderAmount),
-                spentAmount = currencyFormatter.format(totalSpent),
-                budgetProgress = if (categories.isEmpty()) 0f else {
-                    (transactions.size.toFloat() / (transactions.size + categories.size).coerceAtLeast(1)).coerceIn(0f, 1f)
+                currentBalance = currencyFormatter.format(totalIncome - totalExpenses),
+                totalIncome = currencyFormatter.format(totalIncome),
+                totalExpenses = currencyFormatter.format(totalExpenses),
+                savingsProgress = goal?.let { savingsGoal ->
+                    if (savingsGoal.targetAmount <= 0.0) 0f else (savedAmount / savingsGoal.targetAmount).toFloat().coerceIn(0f, 1f)
+                } ?: 0f,
+                savingsProgressLabel = goal?.let { savingsGoal ->
+                    "${currencyFormatter.format(savedAmount.coerceAtLeast(0.0))} saved of ${currencyFormatter.format(savingsGoal.targetAmount)}"
+                } ?: "Set a savings goal to stay on track",
+                goalSummary = goal?.targetDateMillis?.let { target ->
+                    "Target by ${dateFormatter.format(Date(target))}"
+                } ?: "Flexible goal with no deadline",
+                folderUsage = folderUsage.map { usage ->
+                    FolderUsageUiState(
+                        name = usage.folderName,
+                        usagePercent = usage.usagePercent,
+                        usedAmount = currencyFormatter.format(usage.usedAmount),
+                        totalAmount = currencyFormatter.format(usage.limitAmount),
+                        usageSummary = "You've used ${usage.usagePercent}% of ${usage.folderName}",
+                        deadlineLabel = "Till ${dateFormatter.format(Date(usage.deadlineMillis))}",
+                        isWarning = usage.isWarning,
+                        isExceeded = usage.isExceeded,
+                        progress = usage.progress
+                    )
                 },
-                budgetProgressLabel = if (transactions.isEmpty()) {
-                    "Start tracking payments from your folders"
-                } else {
-                    "${transactions.size} payments tracked from folders"
-                },
-                insights = buildHomeInsights(categories, transactions),
-                folderSpendChart = buildFolderSpendChart(categories, transactions),
-                isFolderSpendChartEmpty = transactions.none { it.amount > 0.0 },
-                highlightCard = HighlightCardUiState(
-                    title = if (transactions.isEmpty()) "Ready for your first QR payment" else "UPI payments are being tracked",
-                    subtitle = if (transactions.isEmpty()) {
-                        "Scan a merchant QR to deduct directly from a folder."
-                    } else {
-                        "${recentTransactions.firstOrNull()?.title ?: "Recent"} updated your budgets."
-                    }
+                weeklyExpenseChart = it.weeklyExpenseChart.copy(
+                    values = points.map { point -> point.amount.toFloat() },
+                    labels = points.map { point -> point.label },
+                    currentDayIndex = currentIndex,
+                    isEmpty = points.none { point -> point.amount > 0.0 },
+                    selectedChartPeriod = currentPeriod,
+                    isLineGraph = currentPeriod != TimePeriod.WEEK
                 ),
-                folders = categories.map(::categoryToUiState),
-                recentTransactions = recentTransactions,
+                topCategories = transactions
+                    .filter { transaction -> transaction.type == TransactionType.EXPENSE }
+                    .groupBy(FinanceTransaction::category)
+                    .map { (category, items) ->
+                        BudgetCategoryUiState(
+                            name = category,
+                            amount = currencyFormatter.format(items.sumOf(FinanceTransaction::amount))
+                        )
+                    }
+                    .sortedByDescending { category ->
+                        transactions
+                            .filter { it.type == TransactionType.EXPENSE && it.category == category.name }
+                            .sumOf(FinanceTransaction::amount)
+                    }
+                    .take(4),
+                folders = folders.map { folder ->
+                    FolderUiState(
+                        name = folder.name,
+                        isRemovable = !folder.name.equals(FALLBACK_FOLDER, ignoreCase = true),
+                        limitSummary = folder.limitAmount?.let { amount ->
+                            folder.limitEndDateMillis?.let { endDate ->
+                                "${currencyFormatter.format(amount)} till ${dateFormatter.format(Date(endDate))}"
+                            }
+                        },
+                        hasLimit = folder.limitAmount != null && folder.limitEndDateMillis != null,
+                        limitAmount = folder.limitAmount,
+                        limitEndDateMillis = folder.limitEndDateMillis
+                    )
+                },
                 isLoading = false
             )
         }
     }
 
-    private fun updateInsightsState(
-        categories: List<Category>,
-        transactions: List<PaymentTransaction>
-    ) {
-        val groupedByFolder = transactions.groupBy(PaymentTransaction::folderName)
-        val topFolderEntry = groupedByFolder.maxByOrNull { entry -> entry.value.sumOf(PaymentTransaction::amount) }
-        val chartData = buildInsightsChartData(categories, transactions, System.currentTimeMillis())
+    private fun updateTransactionsState(transactions: List<FinanceTransaction>, folders: List<Folder>) {
+        val currentState = _transactionsUiState.value
+        val query = currentState.query.trim()
+        val folderNames = folders.map(Folder::name)
+        val selectedCategory = currentState.selectedCategory?.takeIf { selected ->
+            folderNames.any { it.equals(selected, ignoreCase = true) }
+        }
+        val filtered = transactions
+            .filter { transaction -> currentState.selectedType == null || transaction.type == currentState.selectedType }
+            .filter { transaction -> selectedCategory == null || transaction.category == selectedCategory }
+            .filter { transaction ->
+                query.isBlank() || listOfNotNull(
+                    transaction.category,
+                    transaction.note,
+                    transaction.merchantName,
+                    transaction.payeeVpa
+                ).any { candidate -> candidate.contains(query, ignoreCase = true) }
+            }
+            .sortedByDescending(FinanceTransaction::dateMillis)
+
+        _transactionsUiState.update {
+            it.copy(
+                selectedCategory = selectedCategory,
+                availableCategories = folderNames,
+                transactions = filtered.map(::transactionToListItem),
+                isLoading = false
+            )
+        }
+    }
+
+    private fun updateInsightsState(transactions: List<FinanceTransaction>) {
+        val insights = buildFinanceInsights(transactions, System.currentTimeMillis())
+        val currentPeriod = _insightsUiState.value.selectedTimePeriod
+        val (points, _) = buildChartPointsForPeriod(transactions, System.currentTimeMillis(), currentPeriod)
+        
+        val comparisonLabel = if (insights.previousWeekExpense <= 0.0) {
+            "This week spent ${currencyFormatter.format(insights.currentWeekExpense)}"
+        } else {
+            val delta = insights.currentWeekExpense - insights.previousWeekExpense
+            val direction = if (delta >= 0) "up" else "down"
+            "This week is $direction ${currencyFormatter.format(abs(delta))} versus last week"
+        }
         _insightsUiState.update {
             it.copy(
-                totalSpent = currencyFormatter.format(transactions.sumOf(PaymentTransaction::amount)),
-                transactionCountLabel = "${transactions.size} successful UPI payments",
-                mostUsedFolder = topFolderEntry?.key ?: "No folder usage yet",
-                mostUsedFolderSpend = topFolderEntry?.value?.sumOf(PaymentTransaction::amount)?.let(currencyFormatter::format)
-                    ?: currencyFormatter.format(0),
-                weeklyDailyTotals = chartData.weeklyDailyTotals,
-                currentMonthDailyTotals = chartData.currentMonthDailyTotals,
-                last12MonthTotals = chartData.last12MonthTotals,
-                folderTransactionTotals = chartData.folderTransactionTotals,
-                recentMerchants = transactions.map(PaymentTransaction::merchantName).distinct().take(5),
-                isTransactionChartEmpty = chartData.weeklyDailyTotals.none { point -> point.amount > 0.0 } &&
-                    chartData.currentMonthDailyTotals.none { point -> point.amount > 0.0 },
-                isMonthlyTrendEmpty = chartData.last12MonthTotals.none { point -> point.amount > 0.0 },
-                isFolderChartEmpty = chartData.folderTransactionTotals.none { point -> point.amount > 0.0 },
+                highestSpendingCategory = insights.highestSpendingCategory ?: "No expenses yet",
+                highestSpendingAmount = currencyFormatter.format(insights.highestSpendingAmount),
+                weekComparisonLabel = comparisonLabel,
+                monthlyTrendPoints = points,
+                categoryBreakdown = insights.categoryBreakdown,
+                frequentTransactionType = when (insights.frequentTransactionType) {
+                    TransactionType.INCOME -> "Income"
+                    TransactionType.EXPENSE -> "Expense"
+
+                    null -> "No transactions yet"
+                },
+                selectedTimePeriod = currentPeriod,
+                isLineGraph = currentPeriod != TimePeriod.WEEK,
                 isLoading = false
             )
         }
     }
 
-    private fun syncQrState(categories: List<Category>) {
-        val folderUi = categories.map {
-            FolderPickerUiState(
-                id = it.id,
-                name = it.name,
-                balance = currencyFormatter.format(it.amount)
-            )
+    private fun syncQrState(folders: List<Folder>) {
+        val folderUsages = buildFolderUsageInsights(folders, allTransactions.value)
+        val categories = folders.map { folder ->
+            val usage = folderUsages.find { it.folderName.equals(folder.name, ignoreCase = true) }
+            val availableLabel = if (usage != null) {
+                val available = usage.limitAmount - usage.usedAmount
+                if (available < 0) {
+                    "(-${currencyFormatter.format(kotlin.math.abs(available))})"
+                } else {
+                    currencyFormatter.format(available)
+                }
+            } else {
+                null
+            }
+            CategoryOptionUiState(name = folder.name, availableBudgetLabel = availableLabel)
         }
-        val selectedFolderId = savedStateHandle.get<String>(SELECTED_FOLDER_KEY)
-        val resolvedSelectedFolderId = selectedFolderId?.takeIf { id -> categories.any { it.id == id } }
-            ?: categories.firstOrNull()?.id
-
-        if (resolvedSelectedFolderId != null) {
-            savedStateHandle[SELECTED_FOLDER_KEY] = resolvedSelectedFolderId
+        val categoryNames = categories.map { it.name }
+        val selectedCategory = savedStateHandle.get<String>(SELECTED_CATEGORY_KEY)?.takeIf { savedCategory ->
+            categoryNames.any { it.equals(savedCategory, ignoreCase = true) }
         }
-
+        if (selectedCategory != null) {
+            savedStateHandle[SELECTED_CATEGORY_KEY] = selectedCategory
+        }
         val payload = currentParsedPayload()
-        val pendingPayment = PendingPayment.fromJson(savedStateHandle[PENDING_PAYMENT_KEY])
-
         _qrUiState.update {
             it.copy(
-                folders = folderUi,
+                categories = categories,
+                selectedCategory = selectedCategory,
                 availableUpiApps = UpiAppResolver.resolve(appContext).map(::upiAppToUiState),
                 scannedMerchantName = payload?.payeeName.orEmpty(),
                 scannedPayeeVpa = payload?.payeeVpa.orEmpty(),
                 scannedNote = payload?.note,
                 scannedAmountText = payload?.amount?.let(currencyFormatter::format).orEmpty(),
                 amountInput = savedStateHandle.get<String>(AMOUNT_INPUT_KEY)
-                    ?: payload?.amount?.toString().orEmpty(),
-                isAmountLocked = payload?.hasEmbeddedAmount == true,
-                pendingConfirmation = pendingPayment?.let { payment ->
-                    PendingConfirmationUiState(
-                        merchantName = payment.merchantName,
-                        folderName = payment.folderName,
-                        amount = currencyFormatter.format(payment.amount),
-                        appLabel = payment.upiAppLabel
-                    )
-                },
-                hasCameraPermission = it.hasCameraPermission
+                    ?: payload?.amount?.let { String.format(Locale.US, "%.2f", it) }.orEmpty(),
+                isAmountLocked = payload?.hasEmbeddedAmount == true
             )
         }
         refreshQrDerivedState()
     }
 
-    private fun buildHomeInsights(
-        categories: List<Category>,
-        transactions: List<PaymentTransaction>
-    ): List<InsightCardUiState> {
-        val totalFolderAmount = categories.sumOf(Category::amount)
-        val spent = transactions.sumOf(PaymentTransaction::amount)
-        val topFolder = categories.maxByOrNull(Category::amount)
-
-        return listOf(
-            InsightCardUiState(
-                title = "Folder Availability",
-                status = if (totalFolderAmount >= 0) "Live" else "Negative",
-                description = "Current total balance across all folders after recorded QR payments.",
-                progressLabel = "BALANCE",
-                progressValue = currencyFormatter.format(totalFolderAmount),
-                progress = if (totalFolderAmount <= 0.0) 0f else 1f
-            ),
-            InsightCardUiState(
-                title = "QR Spend Tracker",
-                status = if (transactions.isEmpty()) "Waiting" else "Active",
-                description = "Recorded spend from confirmed UPI payments launched through PayTrack.",
-                progressLabel = "SPENT",
-                progressValue = currencyFormatter.format(spent),
-                progress = if (spent <= 0.0 || totalFolderAmount <= 0.0) 0f else {
-                    (spent / (spent + totalFolderAmount)).toFloat().coerceIn(0f, 1f)
-                }
-            ),
-            InsightCardUiState(
-                title = "Largest Folder",
-                status = "Top",
-                description = "Folder with the highest currently available balance.",
-                progressLabel = "FOLDER",
-                progressValue = topFolder?.name ?: "No folders",
-                progress = 1f
+    private fun refreshQrDerivedState() {
+        // canLaunchPayment now only requires an amount + category (no QR scan needed)
+        val canLaunch = selectedQrCategory() != null &&
+            enteredAmount() != null &&
+            _qrUiState.value.availableUpiApps.isNotEmpty()
+        _qrUiState.update {
+            it.copy(
+                amountInput = savedStateHandle.get<String>(AMOUNT_INPUT_KEY).orEmpty(),
+                selectedCategory = selectedQrCategory(),
+                canLaunchPayment = canLaunch
             )
+        }
+    }
+
+    private fun currentParsedPayload(): ParsedUpiQr? {
+        return savedStateHandle.get<String>(SCANNED_QR_KEY)?.let(UpiQrParser::parse)
+    }
+
+    private fun selectedQrCategory(): String? = savedStateHandle.get<String>(SELECTED_CATEGORY_KEY)
+
+    private fun enteredAmount(): Double? {
+        return savedStateHandle.get<String>(AMOUNT_INPUT_KEY)?.toDoubleOrNull()?.takeIf { it > 0.0 }
+    }
+
+    private fun formattedAmount(): String? {
+        return enteredAmount()?.let { String.format(Locale.US, "%.2f", it) }
+    }
+
+    private fun buildPaymentRequest(payload: ParsedUpiQr): UpiPaymentRequest? {
+        val amount = formattedAmount() ?: return null
+        return UpiAppResolver.createPaymentRequest(
+            upiId = payload.payeeVpa,
+            name = payload.payeeName,
+            amount = amount,
+            note = payload.note.orEmpty(),
+            rawUri = payload.rawUri
         )
     }
 
-    private fun buildFolderSpendChart(
-        categories: List<Category>,
-        transactions: List<PaymentTransaction>
-    ): List<FolderTransactionChartUiState> {
-        val folderLookup = categories.associateBy(Category::id)
-        return transactions
-            .groupBy(PaymentTransaction::folderId)
-            .mapNotNull { (folderId, folderTransactions) ->
-                val folder = folderLookup[folderId] ?: return@mapNotNull null
-                FolderTransactionChartUiState(
-                    name = folder.name,
-                    amount = folderTransactions.sumOf(PaymentTransaction::amount),
-                    accentColor = folder.accentColor
-                )
-            }
-            .sortedByDescending(FolderTransactionChartUiState::amount)
-    }
-
-    private fun categoryToUiState(category: Category): BudgetCategoryUiState {
-        return BudgetCategoryUiState(
-            id = category.id,
-            name = category.name,
-            amount = currencyFormatter.format(category.amount),
-            accentColor = category.accentColor
-        )
-    }
-
-    private fun transactionToUiState(transaction: PaymentTransaction): RecentTransactionUiState {
+    private fun transactionToListItem(transaction: FinanceTransaction): RecentTransactionUiState {
         return RecentTransactionUiState(
-            title = transaction.merchantName,
-            subtitle = "${transaction.folderName} via ${transaction.upiAppLabel}",
-            time = timeFormatter.format(Date(transaction.createdAtMillis)),
-            amount = "-${currencyFormatter.format(transaction.amount)}",
-            isExpense = true
+            id = transaction.id,
+            title = transaction.merchantName ?: transaction.category,
+            subtitle = buildList {
+                add(transaction.category)
+                add(qrOriginLabel(transaction.source))
+                transaction.upiAppLabel?.let(::add)
+            }.joinToString(" • "),
+            time = timeFormatter.format(Date(transaction.dateMillis)),
+            amount = if (transaction.type == TransactionType.EXPENSE) {
+                "-${currencyFormatter.format(transaction.amount)}"
+            } else {
+                "+${currencyFormatter.format(transaction.amount)}"
+            },
+            rawAmount = if (transaction.type == TransactionType.EXPENSE) -transaction.amount else transaction.amount,
+            rawDateMillis = transaction.dateMillis,
+            isExpense = transaction.type == TransactionType.EXPENSE,
+            category = transaction.category
         )
     }
 
     private fun upiAppToUiState(app: com.paytrack.data.UpiAppInfo): UpiAppUiState {
-        return UpiAppUiState(
-            label = app.label,
-            packageName = app.packageName
-        )
+        return UpiAppUiState(label = app.label, packageName = app.packageName, icon = app.icon)
     }
 
-    private fun markPaymentError(message: String): Intent? {
+    private fun markQrError(message: String): Intent? {
         _qrUiState.update { it.copy(paymentError = message) }
         return null
+    }
+
+    private fun isRapidRepeatLaunch(): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        val isRepeatedTooSoon = now - lastUpiLaunchAtMillis < 2000
+        if (!isRepeatedTooSoon) {
+            lastUpiLaunchAtMillis = now
+        }
+        return isRepeatedTooSoon
+    }
+
+    private fun recordSuccessfulPayment(packageName: String?) {
+        val payload = currentParsedPayload() ?: return
+        val amount = enteredAmount() ?: return
+        val category = selectedQrCategory() ?: return
+        val selectedApp = packageName?.let { launchedPackage ->
+            _qrUiState.value.availableUpiApps.firstOrNull { it.packageName == launchedPackage }
+        }
+
+        viewModelScope.launch {
+            repository.addTransaction(
+                amount = amount,
+                type = TransactionType.EXPENSE,
+                category = category,
+                dateMillis = System.currentTimeMillis(),
+                note = payload.note ?: "Paid through UPI QR",
+                merchantName = payload.payeeName,
+                payeeVpa = payload.payeeVpa,
+                source = TransactionSource.QR_UPI,
+                upiAppPackage = selectedApp?.packageName,
+                upiAppLabel = selectedApp?.label
+            )
+            pendingUpiPackageName = null
+            clearScannedQr()
+        }
+    }
+
+    private fun buildFailureMessage(responseCode: String?): String {
+        val base = "UPI payment failed. Response code: ${responseCode ?: "unknown"}."
+        val alternateApp = _qrUiState.value.availableUpiApps
+            .firstOrNull { it.packageName != lastAttemptedUpiPackageName }
+            ?.label
+
+        return if (alternateApp != null) {
+            "$base Try again or switch to $alternateApp."
+        } else {
+            "$base Try again after checking limits, bank availability, or PSP security prompts."
+        }
+    }
+
+    private fun buildUnknownResultMessage(): String {
+        val alternateApp = _qrUiState.value.availableUpiApps
+            .firstOrNull { it.packageName != lastAttemptedUpiPackageName }
+            ?.label
+
+        return if (alternateApp != null) {
+            "UPI app did not return a final status. You can retry or try $alternateApp."
+        } else {
+            "UPI app did not return a final status. You can retry after checking the payment status in your PSP app."
+        }
+    }
+
+    private fun updateFolderMessage(message: String?) {
+        _homeUiState.update { it.copy(folderMessage = message) }
+    }
+
+    private fun endOfDay(timeMillis: Long): Long {
+        return Calendar.getInstance().apply {
+            timeInMillis = timeMillis
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }.timeInMillis
+    }
+
+    // ── SMS Import ────────────────────────────────────────────────────────────
+
+    fun importSmsHistory(onResult: (imported: Int) -> Unit) {
+        viewModelScope.launch {
+            val count = SmsImporter.importHistory(appContext, repository)
+            onResult(count)
+        }
     }
 }
 
@@ -588,119 +862,3 @@ class HomeViewModelFactory(
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
     }
 }
-
-private fun String.toCurrencyValue(): Double {
-    return replace("$", "")
-        .replace("\u20b9", "")
-        .replace(",", "")
-        .trim()
-        .toDoubleOrNull() ?: 0.0
-}
-
-internal data class InsightsChartData(
-    val weeklyDailyTotals: List<ChartPointUiState>,
-    val currentMonthDailyTotals: List<ChartPointUiState>,
-    val last12MonthTotals: List<ChartPointUiState>,
-    val folderTransactionTotals: List<FolderTransactionChartUiState>
-)
-
-internal fun buildInsightsChartData(
-    categories: List<Category>,
-    transactions: List<PaymentTransaction>,
-    nowMillis: Long
-): InsightsChartData {
-    val nowCalendar = Calendar.getInstance().apply { timeInMillis = nowMillis }
-    val currentYear = nowCalendar.get(Calendar.YEAR)
-    val currentMonth = nowCalendar.get(Calendar.MONTH)
-
-    val weekStart = (nowCalendar.clone() as Calendar).apply {
-        firstDayOfWeek = Calendar.MONDAY
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-        val difference = (get(Calendar.DAY_OF_WEEK) - firstDayOfWeek + 7) % 7
-        add(Calendar.DAY_OF_MONTH, -difference)
-    }
-
-    val weeklyTotals = MutableList(7) { 0.0 }
-    val daysInMonth = nowCalendar.getActualMaximum(Calendar.DAY_OF_MONTH)
-    val currentMonthTotals = MutableList(daysInMonth) { 0.0 }
-    val monthTotals = linkedMapOf<Pair<Int, Int>, Double>()
-
-    val rollingMonthCalendar = (nowCalendar.clone() as Calendar).apply {
-        set(Calendar.DAY_OF_MONTH, 1)
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-        add(Calendar.MONTH, -11)
-    }
-    repeat(12) {
-        monthTotals[rollingMonthCalendar.get(Calendar.YEAR) to rollingMonthCalendar.get(Calendar.MONTH)] = 0.0
-        rollingMonthCalendar.add(Calendar.MONTH, 1)
-    }
-
-    val folderColorLookup = categories.associateBy(Category::id)
-    val folderTotals = linkedMapOf<String, FolderTransactionChartUiState>()
-
-    transactions.forEach { transaction ->
-        val transactionCalendar = Calendar.getInstance().apply { timeInMillis = transaction.createdAtMillis }
-        val transactionYear = transactionCalendar.get(Calendar.YEAR)
-        val transactionMonth = transactionCalendar.get(Calendar.MONTH)
-
-        val startOfTransactionDay = (transactionCalendar.clone() as Calendar).apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-        val daysFromWeekStart = ((startOfTransactionDay.timeInMillis - weekStart.timeInMillis) / MILLIS_PER_DAY).toInt()
-        if (daysFromWeekStart in 0..6) {
-            weeklyTotals[daysFromWeekStart] += transaction.amount
-        }
-
-        if (transactionYear == currentYear && transactionMonth == currentMonth) {
-            val dayIndex = transactionCalendar.get(Calendar.DAY_OF_MONTH) - 1
-            if (dayIndex in currentMonthTotals.indices) {
-                currentMonthTotals[dayIndex] += transaction.amount
-            }
-        }
-
-        val monthKey = transactionYear to transactionMonth
-        if (monthTotals.containsKey(monthKey)) {
-            monthTotals[monthKey] = monthTotals.getValue(monthKey) + transaction.amount
-        }
-
-        val existingFolderTotal = folderTotals[transaction.folderId]
-        val folderAccentColor = folderColorLookup[transaction.folderId]?.accentColor ?: 0xFF5CC9C0
-        folderTotals[transaction.folderId] = FolderTransactionChartUiState(
-            name = transaction.folderName,
-            amount = (existingFolderTotal?.amount ?: 0.0) + transaction.amount,
-            accentColor = folderAccentColor
-        )
-    }
-
-    val weekLabels = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-    val monthLabelFormatter = SimpleDateFormat("MMM", Locale.ENGLISH)
-
-    return InsightsChartData(
-        weeklyDailyTotals = weekLabels.mapIndexed { index, label ->
-            ChartPointUiState(label = label, amount = weeklyTotals[index])
-        },
-        currentMonthDailyTotals = currentMonthTotals.mapIndexed { index, amount ->
-            ChartPointUiState(label = (index + 1).toString(), amount = amount)
-        },
-        last12MonthTotals = monthTotals.map { (yearMonth, amount) ->
-            val labelCalendar = Calendar.getInstance().apply {
-                set(Calendar.YEAR, yearMonth.first)
-                set(Calendar.MONTH, yearMonth.second)
-                set(Calendar.DAY_OF_MONTH, 1)
-            }
-            ChartPointUiState(label = monthLabelFormatter.format(labelCalendar.time), amount = amount)
-        },
-        folderTransactionTotals = folderTotals.values.sortedByDescending(FolderTransactionChartUiState::amount)
-    )
-}
-
-private const val MILLIS_PER_DAY = 24L * 60L * 60L * 1000L

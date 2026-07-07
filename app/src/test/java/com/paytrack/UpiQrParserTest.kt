@@ -37,4 +37,11 @@ class UpiQrParserTest {
 
         assertNull(parsed)
     }
+
+    @Test
+    fun parse_returnsNullForInvalidUpiId() {
+        val parsed = UpiQrParser.parse("upi://pay?pa=bad upi&pn=Broken Merchant&am=100.00")
+
+        assertNull(parsed)
+    }
 }
