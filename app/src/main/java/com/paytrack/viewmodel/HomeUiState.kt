@@ -15,8 +15,13 @@ data class HomeUiState(
     val topCategories: List<BudgetCategoryUiState> = emptyList(),
     val folders: List<FolderUiState> = emptyList(),
     val folderMessage: String? = null,
+    val heroPeriod: HeroPeriod = HeroPeriod.ALL,
     val isLoading: Boolean = true
 )
+
+enum class HeroPeriod {
+    ALL, THIS_MONTH
+}
 
 enum class TimePeriod {
     WEEK, MONTH
@@ -82,12 +87,33 @@ data class InsightsUiState(
     val highestSpendingCategory: String = "",
     val highestSpendingAmount: String = "",
     val weekComparisonLabel: String = "",
+    val weeklyExpenseAmount: String = "",
     val monthlyTrendPoints: List<ChartPointUiState> = emptyList(),
     val categoryBreakdown: List<CategoryBreakdownUiState> = emptyList(),
     val frequentTransactionType: String = "",
     val selectedTimePeriod: TimePeriod = TimePeriod.MONTH,
     val isLineGraph: Boolean = true,
+    // ── Savings Vault ─────────────────────────────────────────────────────────
+    val savingsVaultTotal: String = "₹0",
+    val savingsVaultRawTotal: Double = 0.0,
+    val savingsLedger: List<SavingsLedgerEntryUiState> = emptyList(),
+    val vaultGoalCount: Int = 0,
+    // ─────────────────────────────────────────────────────────────────────────
     val isLoading: Boolean = true
+)
+
+data class SavingsLedgerEntryUiState(
+    val folderName: String = "",
+    /** spent / limit, clamped to 0..1 for the progress ring. */
+    val spentPercent: Float = 0f,
+    /** E.g. "₹290 of ₹300" */
+    val spentLabel: String = "",
+    /** E.g. "Closed 23 Jul" */
+    val closedDateLabel: String = "",
+    /** Raw saved value, used for count-up animation. */
+    val savedRaw: Double = 0.0,
+    /** E.g. "+₹4,500" */
+    val savedLabel: String = ""
 )
 
 data class ChartPointUiState(
@@ -143,5 +169,6 @@ data class TransactionFormData(
 
 data class SavingsGoalFormData(
     val targetAmount: Double = 0.0,
+    val startDateMillis: Long? = null,
     val targetDateMillis: Long? = null
 )

@@ -16,6 +16,7 @@ import com.paytrack.data.FinanceRepository
 import com.paytrack.data.FinanceTransaction
 import com.paytrack.data.FALLBACK_FOLDER
 import com.paytrack.data.SavingsGoal
+import com.paytrack.data.SavingsLedgerEntry
 import com.paytrack.data.TransactionSource
 import com.paytrack.data.TransactionType
 import com.paytrack.payment.ParsedUpiQr
@@ -66,6 +67,8 @@ class HomeViewModel(
     private val allTransactions = MutableStateFlow<List<FinanceTransaction>>(emptyList())
     private val savingsGoal = MutableStateFlow<SavingsGoal?>(null)
     private val allFolders = MutableStateFlow<List<Folder>>(emptyList())
+    private val savingsLedger = MutableStateFlow<List<SavingsLedgerEntry>>(emptyList())
+    private var sweepDoneThisSession = false
 
     private val currencyFormatter = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("en-IN"))
     private val dateFormatter = SimpleDateFormat("dd MMM yyyy", Locale.ENGLISH)
@@ -81,20 +84,38 @@ class HomeViewModel(
             combine(
                 repository.getTransactions(),
                 repository.getSavingsGoal(),
-                repository.getFolders()
-            ) { transactions, goal, folders ->
-                Triple(transactions, goal, folders)
-            }.collect { (transactions, goal, folders) ->
-                allTransactions.value = transactions
-                savingsGoal.value = goal
-                allFolders.value = folders
-                updateHomeState(transactions, goal, folders)
-                updateTransactionsState(transactions, folders)
-                updateInsightsState(transactions)
-                syncQrState(folders)
+                repository.getFolders(),
+                repository.getSavingsLedger()
+            ) { transactions, goal, folders, ledger ->
+                object {
+                    val t = transactions
+                    val g = goal
+                    val f = folders
+                    val l = ledger
+                }
+            }.collect { data ->
+                allTransactions.value = data.t
+                savingsGoal.value = data.g
+                allFolders.value = data.f
+                savingsLedger.value = data.l
+
+                // Launch sweep as a non-blocking side-effect so the UI updates immediately.
+                // If sweep writes to DataStore it will trigger another emission with fresh data.
+                if (!sweepDoneThisSession) {
+                    sweepDoneThisSession = true
+                    viewModelScope.launch {
+                        repository.sweepClosedFolders(data.t, System.currentTimeMillis())
+                    }
+                }
+
+                updateHomeState(data.t, data.g, data.f)
+                updateTransactionsState(data.t, data.f)
+                updateInsightsState(data.t, data.l)
+                syncQrState(data.f)
             }
         }
     }
+
 
     fun updateTransactionSearchQuery(query: String) {
         _transactionsUiState.update { it.copy(query = query) }
@@ -227,14 +248,15 @@ class HomeViewModel(
         } else {
             SavingsGoalFormData(
                 targetAmount = goal.targetAmount,
+                startDateMillis = goal.startDateMillis,
                 targetDateMillis = goal.targetDateMillis
             )
         }
     }
 
-    fun saveSavingsGoal(targetAmount: Double, targetDateMillis: Long?) {
+    fun saveSavingsGoal(targetAmount: Double, startDateMillis: Long?, targetDateMillis: Long?) {
         viewModelScope.launch {
-            repository.saveSavingsGoal(SavingsGoal(targetAmount = targetAmount, targetDateMillis = targetDateMillis))
+            repository.saveSavingsGoal(SavingsGoal(targetAmount = targetAmount, startDateMillis = startDateMillis, targetDateMillis = targetDateMillis))
         }
     }
 
@@ -503,18 +525,62 @@ class HomeViewModel(
         }
     }
 
+    fun updateHeroPeriod(period: HeroPeriod) {
+        _homeUiState.update { it.copy(heroPeriod = period) }
+        updateHomeState(allTransactions.value, savingsGoal.value, allFolders.value)
+    }
+
     private fun updateHomeState(
         transactions: List<FinanceTransaction>,
         goal: SavingsGoal?,
         folders: List<Folder>
     ) {
-        val totalIncome = transactions.filter { it.type == TransactionType.INCOME }.sumOf(FinanceTransaction::amount)
-        val totalExpenses = transactions.filter { it.type == TransactionType.EXPENSE }.sumOf(FinanceTransaction::amount)
+        val heroPeriod = _homeUiState.value.heroPeriod
+        val heroTransactions = if (heroPeriod == HeroPeriod.THIS_MONTH) {
+            val cal = Calendar.getInstance()
+            val currentMonth = cal.get(Calendar.MONTH)
+            val currentYear = cal.get(Calendar.YEAR)
+            transactions.filter {
+                val tCal = Calendar.getInstance().apply { timeInMillis = it.dateMillis }
+                tCal.get(Calendar.MONTH) == currentMonth && tCal.get(Calendar.YEAR) == currentYear
+            }
+        } else {
+            transactions
+        }
+
+        val totalIncome = heroTransactions.filter { it.type == TransactionType.INCOME }.sumOf(FinanceTransaction::amount)
+        val totalExpenses = heroTransactions.filter { it.type == TransactionType.EXPENSE }.sumOf(FinanceTransaction::amount)
         val savedAmount = calculateSavedAmount(transactions)
+        val vaultSaved = goal?.savedAmount ?: 0.0
+        val totalSaved = savedAmount + vaultSaved
         val folderUsage = buildFolderUsageInsights(folders, transactions)
         
         val currentPeriod = _homeUiState.value.weeklyExpenseChart.selectedChartPeriod
         val (points, currentIndex) = buildChartPointsForPeriod(transactions, System.currentTimeMillis(), currentPeriod)
+        
+        val periodExpenses = goal?.let {
+            val start = it.startDateMillis?.let { ms ->
+                Calendar.getInstance().apply {
+                    timeInMillis = ms
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }.timeInMillis
+            } ?: 0L
+            val end = it.targetDateMillis?.let { ms ->
+                Calendar.getInstance().apply {
+                    timeInMillis = ms
+                    set(Calendar.HOUR_OF_DAY, 23)
+                    set(Calendar.MINUTE, 59)
+                    set(Calendar.SECOND, 59)
+                    set(Calendar.MILLISECOND, 999)
+                }.timeInMillis
+            } ?: Long.MAX_VALUE
+            transactions.filter { t -> 
+                t.type == TransactionType.EXPENSE && t.dateMillis in start..end 
+            }.sumOf(FinanceTransaction::amount)
+        } ?: 0.0
         
         _homeUiState.update {
             it.copy(
@@ -522,14 +588,24 @@ class HomeViewModel(
                 totalIncome = currencyFormatter.format(totalIncome),
                 totalExpenses = currencyFormatter.format(totalExpenses),
                 savingsProgress = goal?.let { savingsGoal ->
-                    if (savingsGoal.targetAmount <= 0.0) 0f else (savedAmount / savingsGoal.targetAmount).toFloat().coerceIn(0f, 1f)
+                    if (savingsGoal.targetAmount <= 0.0) 0f else (periodExpenses / savingsGoal.targetAmount).toFloat().coerceIn(0f, 1f)
                 } ?: 0f,
                 savingsProgressLabel = goal?.let { savingsGoal ->
-                    "${currencyFormatter.format(savedAmount.coerceAtLeast(0.0))} saved of ${currencyFormatter.format(savingsGoal.targetAmount)}"
-                } ?: "Set a savings goal to stay on track",
-                goalSummary = goal?.targetDateMillis?.let { target ->
-                    "Target by ${dateFormatter.format(Date(target))}"
-                } ?: "Flexible goal with no deadline",
+                    "${currencyFormatter.format(periodExpenses)} spent of ${currencyFormatter.format(savingsGoal.targetAmount)}"
+                } ?: "Set a budget to stay on track",
+                goalSummary = goal?.let { savingsGoal ->
+                    val startStr = savingsGoal.startDateMillis?.let { t -> dateFormatter.format(Date(t)) }
+                    val endStr = savingsGoal.targetDateMillis?.let { t -> dateFormatter.format(Date(t)) }
+                    if (startStr != null && endStr != null) {
+                        "$startStr - $endStr"
+                    } else if (startStr != null) {
+                        "From $startStr"
+                    } else if (endStr != null) {
+                        "Target by $endStr"
+                    } else {
+                        "Flexible budget with no deadline"
+                    }
+                } ?: "Flexible budget with no deadline",
                 folderUsage = folderUsage.map { usage ->
                     FolderUsageUiState(
                         name = usage.folderName,
@@ -615,11 +691,11 @@ class HomeViewModel(
         }
     }
 
-    private fun updateInsightsState(transactions: List<FinanceTransaction>) {
+    private fun updateInsightsState(transactions: List<FinanceTransaction>, ledger: List<SavingsLedgerEntry> = emptyList()) {
         val insights = buildFinanceInsights(transactions, System.currentTimeMillis())
         val currentPeriod = _insightsUiState.value.selectedTimePeriod
         val (points, _) = buildChartPointsForPeriod(transactions, System.currentTimeMillis(), currentPeriod)
-        
+
         val comparisonLabel = if (insights.previousWeekExpense <= 0.0) {
             "This week spent ${currencyFormatter.format(insights.currentWeekExpense)}"
         } else {
@@ -627,24 +703,48 @@ class HomeViewModel(
             val direction = if (delta >= 0) "up" else "down"
             "This week is $direction ${currencyFormatter.format(abs(delta))} versus last week"
         }
+
+        val vaultTotal = ledger.sumOf { it.saved }
+        val ledgerUiState = ledger.map { entry ->
+            val spentPct = if (entry.limit > 0) (entry.spent / entry.limit).toFloat().coerceIn(0f, 1f) else 0f
+            val closedDate = SimpleDateFormat("d MMM", Locale.ENGLISH).format(Date(entry.cycleEndDate))
+            SavingsLedgerEntryUiState(
+                folderName = entry.folderName,
+                spentPercent = spentPct,
+                spentLabel = "${rupeeCompact(entry.spent)} of ${rupeeCompact(entry.limit)}",
+                closedDateLabel = "Closed $closedDate",
+                savedRaw = entry.saved,
+                savedLabel = "+${rupeeCompact(entry.saved)}"
+            )
+        }
+
         _insightsUiState.update {
             it.copy(
                 highestSpendingCategory = insights.highestSpendingCategory ?: "No expenses yet",
                 highestSpendingAmount = currencyFormatter.format(insights.highestSpendingAmount),
                 weekComparisonLabel = comparisonLabel,
+                weeklyExpenseAmount = currencyFormatter.format(insights.currentWeekExpense),
                 monthlyTrendPoints = points,
                 categoryBreakdown = insights.categoryBreakdown,
                 frequentTransactionType = when (insights.frequentTransactionType) {
                     TransactionType.INCOME -> "Income"
                     TransactionType.EXPENSE -> "Expense"
-
                     null -> "No transactions yet"
                 },
                 selectedTimePeriod = currentPeriod,
                 isLineGraph = currentPeriod != TimePeriod.WEEK,
+                savingsVaultTotal = currencyFormatter.format(vaultTotal),
+                savingsVaultRawTotal = vaultTotal,
+                savingsLedger = ledgerUiState,
+                vaultGoalCount = ledger.size,
                 isLoading = false
             )
         }
+    }
+
+    /** Format a double as compact rupee string: ₹4,500 */
+    private fun rupeeCompact(amount: Double): String {
+        return "\u20B9${String.format("%,.0f", amount)}"
     }
 
     private fun syncQrState(folders: List<Folder>) {

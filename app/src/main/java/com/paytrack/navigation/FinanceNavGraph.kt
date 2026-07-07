@@ -143,7 +143,8 @@ fun FinanceNavGraph(
                         onClearFolderLimit = homeViewModel::clearFolderLimit,
                         onDeleteFolder = homeViewModel::deleteFolder,
                         onClearFolderMessage = homeViewModel::clearFolderMessage,
-                        onChartPeriodSelected = homeViewModel::updateHomeChartPeriod
+                        onChartPeriodSelected = homeViewModel::updateHomeChartPeriod,
+                        onHeroPeriodSelected = homeViewModel::updateHeroPeriod
                     )
                 }
 
@@ -228,8 +229,8 @@ fun FinanceNavGraph(
                     GoalFormRoute(
                         formData = homeViewModel.getGoalFormData(),
                         onNavigateBack = { navController.popBackStack() },
-                        onSaveGoal = { targetAmount, targetDateMillis ->
-                            homeViewModel.saveSavingsGoal(targetAmount, targetDateMillis)
+                        onSaveGoal = { targetAmount, startDateMillis, targetDateMillis ->
+                            homeViewModel.saveSavingsGoal(targetAmount, startDateMillis, targetDateMillis)
                             navController.popBackStack()
                         }
                     )

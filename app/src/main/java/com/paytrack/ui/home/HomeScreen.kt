@@ -4,6 +4,7 @@ import android.app.DatePickerDialog
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,13 +14,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
@@ -28,6 +35,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.paytrack.ui.home.components.WeeklyExpenseChart
 import com.paytrack.ui.theme.*
 import com.paytrack.viewmodel.*
@@ -48,6 +56,7 @@ fun HomeRoute(
     onDeleteFolder: (String) -> Unit,
     onClearFolderMessage: () -> Unit,
     onChartPeriodSelected: (com.paytrack.viewmodel.TimePeriod) -> Unit,
+    onHeroPeriodSelected: (com.paytrack.viewmodel.HeroPeriod) -> Unit,
     modifier: Modifier = Modifier
 ) {
     HomeScreen(
@@ -63,6 +72,7 @@ fun HomeRoute(
         onDeleteFolder = onDeleteFolder,
         onClearFolderMessage = onClearFolderMessage,
         onChartPeriodSelected = onChartPeriodSelected,
+        onHeroPeriodSelected = onHeroPeriodSelected,
         modifier = modifier
     )
 }
@@ -81,6 +91,7 @@ fun HomeScreen(
     onDeleteFolder: (String) -> Unit,
     onClearFolderMessage: () -> Unit,
     onChartPeriodSelected: (com.paytrack.viewmodel.TimePeriod) -> Unit,
+    onHeroPeriodSelected: (com.paytrack.viewmodel.HeroPeriod) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -89,7 +100,10 @@ fun HomeScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            HomeTopAppBar(onOpenProfile = onOpenProfile)
+        }
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -111,7 +125,8 @@ fun HomeScreen(
                             balance = uiState.currentBalance,
                             income = uiState.totalIncome,
                             expenses = uiState.totalExpenses,
-                            onOpenProfile = onOpenProfile
+                            heroPeriod = uiState.heroPeriod,
+                            onHeroPeriodSelected = onHeroPeriodSelected
                         )
                     }
                     item {
@@ -224,10 +239,72 @@ fun HomeScreen(
 }
 
 @Composable
-private fun HeroBalanceCard(balance: String, income: String, expenses: String, onOpenProfile: () -> Unit) {
+private fun HomeTopAppBar(onOpenProfile: () -> Unit) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Avatar
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(Brush.linearGradient(GradientHero))
+                    .clickable(onClick = onOpenProfile),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "A",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            
+            // Text
+            Column {
+                Text(
+                    text = "Good morning ✨",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "Arham",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontFamily = com.paytrack.ui.theme.SpaceGrotesk
+                    ),
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), thickness = 1.dp)
+    }
+}
+
+@Composable
+private fun HeroBalanceCard(
+    balance: String, 
+    income: String, 
+    expenses: String,
+    heroPeriod: com.paytrack.viewmodel.HeroPeriod,
+    onHeroPeriodSelected: (com.paytrack.viewmodel.HeroPeriod) -> Unit
+) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 12.dp,
+                shape = RoundedCornerShape(24.dp),
+                ambientColor = Color(0xFF7C6BFF),
+                spotColor = Color(0xFF5B4CFC)
+            ),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
@@ -236,49 +313,208 @@ private fun HeroBalanceCard(balance: String, income: String, expenses: String, o
                 .fillMaxWidth()
                 .background(
                     brush = Brush.linearGradient(
-                        colors = GradientHero
+                        colors = listOf(Color(0xFF5B4CFC), Color(0xFF7C6BFF), Color(0xFF9C8CFF)),
+                        start = androidx.compose.ui.geometry.Offset(0f, 0f),
+                        end = androidx.compose.ui.geometry.Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
                     )
                 )
-                .padding(24.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+            // Ambient texture wave
+            androidx.compose.foundation.Canvas(modifier = Modifier.matchParentSize()) {
+                val path = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(0f, size.height * 0.6f)
+                    quadraticBezierTo(size.width * 0.3f, size.height * 0.9f, size.width * 0.7f, size.height * 0.5f)
+                    quadraticBezierTo(size.width * 0.9f, size.height * 0.3f, size.width, size.height * 0.4f)
+                    lineTo(size.width, size.height)
+                    lineTo(0f, size.height)
+                    close()
+                }
+                drawPath(path = path, color = Color.White.copy(alpha = 0.15f))
+            }
+
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.Top
                 ) {
-                    Text(
-                        text = "Good morning ✨",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color.White.copy(alpha = 0.9f)
-                    )
-                    IconButton(
-                        onClick = onOpenProfile,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(Color.White.copy(alpha = 0.2f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Person,
-                            contentDescription = "Open profile",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Total Balance",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
+                        Text(
+                            text = balance,
+                            fontFamily = com.paytrack.ui.theme.IBMPlexMono,
+                            fontSize = 38.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White
                         )
                     }
-                }
-                
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "Total Balance",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = balance,
-                        style = MaterialTheme.typography.displayMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
+                    
+                    var menuExpanded by remember { mutableStateOf(false) }
+                    Box {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.White.copy(alpha = 0.15f))
+                                .clickable { menuExpanded = true }
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (heroPeriod == com.paytrack.viewmodel.HeroPeriod.ALL) "All" else "This Month",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = "Select period",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        val isAllSelected = heroPeriod == com.paytrack.viewmodel.HeroPeriod.ALL
+                        val isMonthSelected = heroPeriod == com.paytrack.viewmodel.HeroPeriod.THIS_MONTH
+
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                            modifier = Modifier
+                                .width(220.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(MaterialTheme.colorScheme.surface)
+                                .border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                                    RoundedCornerShape(20.dp)
+                                )
+                                .padding(vertical = 8.dp)
+                        ) {
+
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            androidx.compose.foundation.layout.Box(
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                                    .background(
+                                                        if (isAllSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.DateRange,
+                                                    contentDescription = null,
+                                                    tint = if (isAllSelected) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+
+                                            Spacer(modifier = Modifier.width(14.dp))
+
+                                            Text(
+                                                text = "All Time",
+                                                style = MaterialTheme.typography.bodyMedium.copy(
+                                                    fontWeight = if (isAllSelected) FontWeight.Bold else FontWeight.Medium,
+                                                    color = if (isAllSelected) MaterialTheme.colorScheme.onSurface
+                                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            )
+                                        }
+
+                                        if (isAllSelected) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Selected",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    onHeroPeriodSelected(com.paytrack.viewmodel.HeroPeriod.ALL)
+                                    menuExpanded = false
+                                },
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                            )
+
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                                thickness = 1.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                            )
+
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            androidx.compose.foundation.layout.Box(
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                                    .background(
+                                                        if (isMonthSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.CalendarMonth,
+                                                    contentDescription = null,
+                                                    tint = if (isMonthSelected) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+
+                                            Spacer(modifier = Modifier.width(14.dp))
+
+                                            Text(
+                                                text = "This Month",
+                                                style = MaterialTheme.typography.bodyMedium.copy(
+                                                    fontWeight = if (isMonthSelected) FontWeight.Bold else FontWeight.Medium,
+                                                    color = if (isMonthSelected) MaterialTheme.colorScheme.onSurface
+                                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            )
+                                        }
+
+                                        if (isMonthSelected) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Selected",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    onHeroPeriodSelected(com.paytrack.viewmodel.HeroPeriod.THIS_MONTH)
+                                    menuExpanded = false
+                                },
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
                 }
                 
                 Row(
@@ -289,14 +525,14 @@ private fun HeroBalanceCard(balance: String, income: String, expenses: String, o
                         icon = Icons.Outlined.ArrowUpward,
                         label = "Income",
                         value = income,
-                        iconTint = IncomeGreen,
+                        iconTint = Color(0xFF0FA968),
                         modifier = Modifier.weight(1f)
                     )
                     HeroMetricPill(
                         icon = Icons.Outlined.ArrowDownward,
                         label = "Expenses",
                         value = expenses,
-                        iconTint = ExpenseRed,
+                        iconTint = Color(0xFFE53935),
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -315,14 +551,14 @@ private fun HeroMetricPill(
 ) {
     Row(
         modifier = modifier
-            .background(Color.White.copy(alpha = 0.18f), RoundedCornerShape(20.dp))
-            .padding(16.dp),
+            .background(Color.White.copy(alpha = 0.15f), RoundedCornerShape(16.dp))
+            .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Box(
             modifier = Modifier
-                .size(36.dp)
+                .size(28.dp)
                 .background(Color.White, CircleShape),
             contentAlignment = Alignment.Center
         ) {
@@ -330,12 +566,12 @@ private fun HeroMetricPill(
                 imageVector = icon,
                 contentDescription = label,
                 tint = iconTint,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(16.dp)
             )
         }
         Column {
             Text(text = label, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f))
-            Text(text = value, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Color.White)
+            Text(text = value, fontFamily = com.paytrack.ui.theme.IBMPlexMono, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
         }
     }
 }
@@ -353,24 +589,24 @@ private fun ActionRow(
         ActionPill(
             label = "Add",
             icon = Icons.Outlined.Add,
-            backgroundColor = IndigoPrimary,
-            contentColor = Color.White,
+            iconColor = IndigoPrimary,
+            iconBgColor = IndigoLight,
             onClick = onAddTransaction,
             modifier = Modifier.weight(1f)
         )
         ActionPill(
             label = "Scan QR",
             icon = Icons.Outlined.QrCodeScanner,
-            backgroundColor = VioletAccent,
-            contentColor = Color.White,
+            iconColor = VioletAccent,
+            iconBgColor = VioletLight,
             onClick = onOpenQr,
             modifier = Modifier.weight(1f)
         )
         ActionPill(
             label = "History",
-            icon = Icons.Outlined.ReceiptLong,
-            backgroundColor = IncomeGreen,
-            contentColor = Color.White,
+            icon = Icons.AutoMirrored.Outlined.ReceiptLong,
+            iconColor = IncomeGreen,
+            iconBgColor = IncomeGreenBg,
             onClick = onOpenTransactions,
             modifier = Modifier.weight(1f)
         )
@@ -381,23 +617,45 @@ private fun ActionRow(
 private fun ActionPill(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    backgroundColor: Color,
-    contentColor: Color,
+    iconColor: Color,
+    iconBgColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier
-            .height(72.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(backgroundColor)
-            .clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+    Card(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Icon(imageVector = icon, contentDescription = label, tint = contentColor, modifier = Modifier.size(24.dp))
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(text = label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = contentColor)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(iconBgColor, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = iconColor,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
     }
 }
 
@@ -406,7 +664,8 @@ private fun GoalCard(
     progress: Float,
     progressLabel: String,
     goalSummary: String,
-    onEditGoal: () -> Unit
+    onEditGoal: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val animatedProgress by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
@@ -414,50 +673,185 @@ private fun GoalCard(
         label = "progressAnim"
     )
 
+    val Teal = Color(0xFF0F766E)
+    val Amber = Color(0xFFB45309)
+    val Red = Color(0xFFB42318)
+    val TextMain = Color(0xFF101828)
+    val BorderColor = Color(0xFFE4E7EC)
+
+    val isSet = progressLabel != "Set a budget to stay on track"
+
+    val statusColor = when {
+        !isSet -> Color(0xFF98A2B3)
+        progress < 0.8f -> Teal
+        progress < 1.0f -> Amber
+        else -> Red
+    }
+
+    val statusText = when {
+        !isSet -> "No budget set"
+        progress < 0.8f -> "On track"
+        progress < 1.0f -> "Approaching limit"
+        else -> "Limit exceeded"
+    }
+
+    val percentText = if (isSet) "${(progress * 100).toInt()}% spent" else ""
+
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(24.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier.fillMaxWidth()
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Savings Goal", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(
-                    text = "Edit",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable(onClick = onEditGoal)
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.AccountBalanceWallet,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Budget Goal",
+                            style = androidx.compose.ui.text.TextStyle(
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Default,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 16.sp
+                            ),
+                            color = TextMain
+                        )
+                        Text(
+                            text = statusText,
+                            style = androidx.compose.ui.text.TextStyle(
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Default,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 12.sp
+                            ),
+                            color = statusColor
+                        )
+                    }
+                }
+
+                Box {
+                    IconButton(onClick = onEditGoal) {
+                        Icon(
+                            imageVector = Icons.Outlined.Edit,
+                            contentDescription = "Edit",
+                            tint = Color(0xFF98A2B3)
+                        )
+                    }
+                }
             }
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(progressLabel, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(goalSummary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Box(
+
+            HorizontalDivider(color = BorderColor, thickness = 1.dp)
+
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(10.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(999.dp))
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = progressLabel,
+                            style = androidx.compose.ui.text.TextStyle(
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Default,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 14.sp
+                            ),
+                            color = TextMain
+                        )
+                        Text(
+                            text = goalSummary,
+                            style = androidx.compose.ui.text.TextStyle(
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Default,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 13.sp
+                            ),
+                            color = Color(0xFF98A2B3)
+                        )
+                    }
+                    if (isSet) {
+                        Text(
+                            text = percentText,
+                            style = androidx.compose.ui.text.TextStyle(
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Default,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            ),
+                            color = statusColor
+                        )
+                    }
+                }
+
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(animatedProgress)
-                        .height(10.dp)
-                        .background(
-                            brush = Brush.linearGradient(colors = GradientHero),
-                            shape = RoundedCornerShape(999.dp)
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .background(Color(0xFFF2F4F7), RoundedCornerShape(999.dp))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(if (isSet) animatedProgress else 0f)
+                            .height(8.dp)
+                            .background(
+                                color = statusColor,
+                                shape = RoundedCornerShape(999.dp)
+                            )
+                    )
+                }
+                
+                if (progress >= 0.8f && isSet) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(statusColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (progress >= 1.0f) Icons.Outlined.ErrorOutline else Icons.Outlined.WarningAmber,
+                            contentDescription = null,
+                            tint = statusColor,
+                            modifier = Modifier.size(20.dp)
                         )
-                )
+                        Text(
+                            text = if (progress >= 1.0f) "You have exceeded your budget limit for this period." else "You are approaching your budget limit.",
+                            style = androidx.compose.ui.text.TextStyle(
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Default,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 12.sp
+                            ),
+                            color = statusColor
+                        )
+                    }
+                }
             }
         }
     }

@@ -16,6 +16,7 @@ import org.json.JSONObject
 private const val TRANSACTIONS_KEY = "transactions_json"
 private const val SAVINGS_GOAL_KEY = "savings_goal_json"
 private const val FOLDERS_KEY = "folders_json"
+private const val SAVINGS_LEDGER_KEY = "savings_ledger_json"
 private const val TAG = "FinanceRepository"
 
 class FinanceRepository(
@@ -36,6 +37,7 @@ class FinanceRepository(
     private val transactionsKey = stringPreferencesKey(TRANSACTIONS_KEY)
     private val savingsGoalKey = stringPreferencesKey(SAVINGS_GOAL_KEY)
     private val foldersKey = stringPreferencesKey(FOLDERS_KEY)
+    private val savingsLedgerKey = stringPreferencesKey(SAVINGS_LEDGER_KEY)
 
     fun getTransactions(): Flow<List<FinanceTransaction>> {
         return context.payTrackPreferencesDataStore.data
@@ -56,6 +58,17 @@ class FinanceRepository(
                 preferences[savingsGoalKey]
                     ?.takeIf(String::isNotBlank)
                     ?.let(::safeJsonToSavingsGoal)
+            }
+    }
+
+    fun getSavingsLedger(): Flow<List<SavingsLedgerEntry>> {
+        return context.payTrackPreferencesDataStore.data
+            .catchPreferences()
+            .map { preferences ->
+                preferences[savingsLedgerKey]
+                    ?.takeIf(String::isNotBlank)
+                    ?.let(::safeJsonToLedger)
+                    .orEmpty()
             }
     }
 
@@ -124,6 +137,98 @@ class FinanceRepository(
     suspend fun saveSavingsGoal(goal: SavingsGoal) {
         context.payTrackPreferencesDataStore.edit { preferences ->
             preferences[savingsGoalKey] = savingsGoalToJson(goal)
+        }
+    }
+
+    /**
+     * Appends a single immutable ledger entry. This is the only allowed write operation
+     * on the ledger — entries are never mutated or deleted.
+     */
+    private suspend fun appendLedgerEntry(entry: SavingsLedgerEntry) {
+        val existing = getSavingsLedger().first()
+        saveLedger(existing + entry)
+    }
+
+    private suspend fun saveLedger(entries: List<SavingsLedgerEntry>) {
+        context.payTrackPreferencesDataStore.edit { preferences ->
+            preferences[savingsLedgerKey] = ledgerToJson(entries)
+        }
+    }
+
+    /**
+     * Client-side sweep: finds folders whose [Folder.limitEndDateMillis] is in the past
+     * and whose cycle is still logically "open" (they have a limit set).
+     *
+     * For each such folder:
+     * - Computes [spent] within the cycle window from [transactions].
+     * - If [spent] <= [limit] (not overspent), writes an immutable ledger entry and
+     *   adds [saved] to the Savings Goal's [SavingsGoal.savedAmount].
+     * - Clears the folder's limit regardless of overspend status (resets to no-limit).
+     *
+     * Safe to call multiple times — folders whose limits have already been cleared
+     * will not have a limit to sweep.
+     */
+    suspend fun sweepClosedFolders(
+        transactions: List<FinanceTransaction>,
+        nowMillis: Long
+    ) {
+        val folders = getFolders().first()
+        val goal = getSavingsGoal().first()
+
+        var vaultContribution = 0.0
+        val newEntries = mutableListOf<SavingsLedgerEntry>()
+        val foldersToReset = mutableListOf<String>()
+
+        for (folder in folders) {
+            val limit = folder.limitAmount ?: continue
+            val startMillis = folder.limitStartDateMillis ?: continue
+            val endMillis = folder.limitEndDateMillis ?: continue
+
+            // Only sweep cycles that have actually ended
+            if (endMillis >= nowMillis) continue
+
+            val spent = transactions
+                .filter { it.type == TransactionType.EXPENSE }
+                .filter { it.category.equals(folder.name, ignoreCase = true) }
+                .filter { it.dateMillis in startMillis..endMillis }
+                .sumOf { it.amount }
+
+            val saved = maxOf(limit - spent, 0.0)
+
+            // Write ledger entry only when something was actually saved
+            if (spent <= limit && saved > 0.0) {
+                newEntries += SavingsLedgerEntry(
+                    folderId = folder.name,
+                    folderName = folder.name,
+                    limit = limit,
+                    spent = spent,
+                    saved = saved,
+                    cycleEndDate = endMillis,
+                    closedAt = nowMillis
+                )
+                vaultContribution += saved
+            }
+            foldersToReset += folder.name
+        }
+
+        if (newEntries.isEmpty() && foldersToReset.isEmpty()) return
+
+        // Write all new ledger entries
+        if (newEntries.isNotEmpty()) {
+            val existing = getSavingsLedger().first()
+            saveLedger(existing + newEntries)
+        }
+
+        // Bump the savings goal's vault contribution
+        if (vaultContribution > 0.0) {
+            val updatedGoal = (goal ?: SavingsGoal(targetAmount = 0.0))
+                .copy(savedAmount = (goal?.savedAmount ?: 0.0) + vaultContribution)
+            saveSavingsGoal(updatedGoal)
+        }
+
+        // Clear limits on all swept folders
+        for (name in foldersToReset) {
+            clearFolderLimit(name)
         }
     }
 
@@ -255,7 +360,9 @@ class FinanceRepository(
     private fun savingsGoalToJson(goal: SavingsGoal): String {
         return JSONObject()
             .put("targetAmount", goal.targetAmount)
+            .put("startDateMillis", goal.startDateMillis)
             .put("targetDateMillis", goal.targetDateMillis)
+            .put("savedAmount", goal.savedAmount)
             .toString()
     }
 
@@ -263,8 +370,56 @@ class FinanceRepository(
         val item = JSONObject(json)
         return SavingsGoal(
             targetAmount = item.optDouble("targetAmount"),
-            targetDateMillis = item.optLong("targetDateMillis").takeIf { it > 0L }
+            startDateMillis = item.optLong("startDateMillis").takeIf { it > 0L },
+            targetDateMillis = item.optLong("targetDateMillis").takeIf { it > 0L },
+            savedAmount = item.optDouble("savedAmount", 0.0).takeIf { it > 0.0 } ?: 0.0
         )
+    }
+
+    private fun ledgerToJson(entries: List<SavingsLedgerEntry>): String {
+        val array = JSONArray()
+        entries.forEach { entry ->
+            array.put(
+                JSONObject()
+                    .put("folderId", entry.folderId)
+                    .put("folderName", entry.folderName)
+                    .put("limit", entry.limit)
+                    .put("spent", entry.spent)
+                    .put("saved", entry.saved)
+                    .put("cycleEndDate", entry.cycleEndDate)
+                    .put("closedAt", entry.closedAt)
+            )
+        }
+        return array.toString()
+    }
+
+    private fun jsonToLedger(json: String): List<SavingsLedgerEntry> {
+        val array = JSONArray(json)
+        return buildList {
+            for (i in 0 until array.length()) {
+                val item = array.getJSONObject(i)
+                add(
+                    SavingsLedgerEntry(
+                        folderId = item.optString("folderId"),
+                        folderName = item.optString("folderName"),
+                        limit = item.optDouble("limit"),
+                        spent = item.optDouble("spent"),
+                        saved = item.optDouble("saved"),
+                        cycleEndDate = item.optLong("cycleEndDate"),
+                        closedAt = item.optLong("closedAt")
+                    )
+                )
+            }
+        }
+    }
+
+    private fun safeJsonToLedger(json: String): List<SavingsLedgerEntry> {
+        return try {
+            jsonToLedger(json)
+        } catch (exception: JSONException) {
+            Log.w(TAG, "Ignoring malformed stored savings ledger JSON", exception)
+            emptyList()
+        }
     }
 
     private fun safeJsonToTransactions(json: String): List<FinanceTransaction> {
