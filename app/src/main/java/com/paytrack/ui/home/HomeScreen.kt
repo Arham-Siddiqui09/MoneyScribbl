@@ -3,6 +3,7 @@ package com.paytrack.ui.home
 import android.app.DatePickerDialog
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.CurrencyRupee
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.DateRange
@@ -107,14 +109,12 @@ fun HomeScreen(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            HomeTopAppBar(onOpenProfile = onOpenProfile)
-        }
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(top=8.dp,bottom = 12.dp)
         ) {
             if (uiState.isLoading) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
@@ -125,7 +125,10 @@ fun HomeScreen(
                         .padding(horizontal = 20.dp),
                     verticalArrangement = Arrangement.spacedBy(24.dp)
                 ) {
-                    item { Spacer(modifier = Modifier.height(8.dp)) }
+                    item {
+                        HomeTopAppBar(onOpenProfile = onOpenProfile)
+                    }
+                  //  item { Spacer(modifier = Modifier.height(4.dp)) }
                     item {
                         HeroBalanceCard(
                             balance = uiState.currentBalance,
@@ -138,8 +141,7 @@ fun HomeScreen(
                     item {
                         ActionRow(
                             onAddTransaction = onAddTransaction,
-                            onOpenQr = onOpenQr,
-                            onOpenTransactions = onOpenTransactions
+                            onOpenQr = onOpenQr
                         )
                     }
                     item {
@@ -345,7 +347,7 @@ private fun HomeTopAppBar(onOpenProfile: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.background)
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -676,84 +678,99 @@ private fun HeroMetricPill(
     }
 }
 
+
 @Composable
 private fun ActionRow(
     onAddTransaction: () -> Unit,
-    onOpenQr: () -> Unit,
-    onOpenTransactions: () -> Unit
+    onOpenQr: () -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         ActionPill(
             label = "Add",
+            subtitle = "Log a transaction",
             icon = Icons.Outlined.Add,
             iconColor = IndigoPrimary,
             iconBgColor = IndigoLight,
+            cardBgColor = IndigoLight.copy(alpha = 0.35f),
             onClick = onAddTransaction,
             modifier = Modifier.weight(1f)
         )
         ActionPill(
-            label = "Scan QR",
-            icon = Icons.Outlined.QrCodeScanner,
-            iconColor = VioletAccent,
-            iconBgColor = VioletLight,
-            onClick = onOpenQr,
-            modifier = Modifier.weight(1f)
-        )
-        ActionPill(
-            label = "History",
-            icon = Icons.AutoMirrored.Outlined.ReceiptLong,
+            label = "Pay",
+            subtitle = "Pay via UPI",
+            icon = Icons.Outlined.CurrencyRupee,
             iconColor = IncomeGreen,
             iconBgColor = IncomeGreenBg,
-            onClick = onOpenTransactions,
+            cardBgColor = IncomeGreenBg.copy(alpha = 0.35f),
+            onClick = onOpenQr,
             modifier = Modifier.weight(1f)
         )
     }
 }
 
+
 @Composable
 private fun ActionPill(
     label: String,
+    subtitle: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     iconColor: Color,
     iconBgColor: Color,
+    cardBgColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        modifier = modifier
+            .clip(RoundedCornerShape(22.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBgColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, iconColor.copy(alpha = 0.12f))
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(44.dp)
-                    .background(iconBgColor, CircleShape),
+                    .size(46.dp)
+                    .background(iconBgColor, RoundedCornerShape(14.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = label,
                     tint = iconColor,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+            Icon(
+                imageVector = Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint = iconColor.copy(alpha = 0.5f),
+                modifier = Modifier.size(18.dp)
             )
         }
     }

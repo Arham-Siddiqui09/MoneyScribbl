@@ -113,7 +113,7 @@ fun InsightsScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(bottom = 4.dp)
         ) {
             if (uiState.isLoading) {
                 CircularProgressIndicator(

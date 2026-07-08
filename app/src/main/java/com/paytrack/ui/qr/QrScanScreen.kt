@@ -133,11 +133,11 @@ fun QrScanRoute(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(top=8.dp,bottom = 24.dp)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+        )   {
             // Header
             Column(modifier = Modifier.padding(top = 24.dp, bottom = 8.dp)) {
                 Text(
