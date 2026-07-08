@@ -38,7 +38,8 @@ data class WeeklyExpenseChartUiState(
 
 data class BudgetCategoryUiState(
     val name: String = "",
-    val amount: String = ""
+    val amount: String = "",
+    val rawAmount: Double = 0.0
 )
 
 data class FolderUiState(

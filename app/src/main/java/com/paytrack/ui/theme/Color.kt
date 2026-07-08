@@ -27,6 +27,19 @@ val SavingsPurpleBg    = Color(0xFFEDE9FE)
 val WarningAmber       = Color(0xFFE0A11C)
 val WarningAmberBg     = Color(0xFFFCF3DE)
 
+// ── Redesign Colors ──────────────────────────────────────────────────────────
+val IndigoSoft         = Color(0xFFEEEBFD)
+val Indigo             = IndigoPrimary
+val GreenSoft          = Color(0xFFE4F7EF)
+val Green              = Color(0xFF12A671)
+val RoseSoft           = Color(0xFFFBE7EC)
+val Rose               = Color(0xFFE85D75)
+val AmberSoft          = Color(0xFFFCF1DE)
+val Amber              = Color(0xFFE8A63A)
+val LineGray           = Color(0xFFEEEEF3)
+val InkColor           = Color(0xFF15161E)
+val MutedColor         = Color(0xFF8A8C9B)
+
 // ── Background & Surface ─────────────────────────────────────────────────────
 val AppBackground      = Color(0xFFF6F6FB)
 val AppSurface         = Color(0xFFFFFFFF)

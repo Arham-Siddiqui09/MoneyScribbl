@@ -637,9 +637,11 @@ class HomeViewModel(
                     .filter { transaction -> transaction.type == TransactionType.EXPENSE }
                     .groupBy(FinanceTransaction::category)
                     .map { (category, items) ->
+                        val sumAmount = items.sumOf(FinanceTransaction::amount)
                         BudgetCategoryUiState(
                             name = category,
-                            amount = currencyFormatter.format(items.sumOf(FinanceTransaction::amount))
+                            amount = currencyFormatter.format(sumAmount),
+                            rawAmount = sumAmount
                         )
                     }
                     .sortedByDescending { category ->

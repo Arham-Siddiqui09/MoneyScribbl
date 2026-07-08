@@ -77,6 +77,7 @@ fun HomeRoute(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     uiState: HomeUiState,
@@ -97,6 +98,7 @@ fun HomeScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
     var selectedFolder by remember { mutableStateOf<FolderUiState?>(null) }
     var createAttempted by remember { mutableStateOf(false) }
+    var showAllFoldersSheet by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -150,43 +152,87 @@ fun HomeScreen(
                             onChartPeriodSelected = onChartPeriodSelected
                         )
                     }
-                    if (uiState.topCategories.isNotEmpty()) {
-                        item {
-                            SectionTitle(title = "Top Categories")
-                        }
-                        items(uiState.topCategories.withIndex().toList()) { (index, category) ->
-                            val color = ChartColors[index % ChartColors.size]
-                            CategorySummaryRow(title = category.name, value = category.amount, color = color)
-                        }
-                    } else {
-                        item {
-                            SectionTitle(title = "Top Categories")
-                        }
-                        item { EmptyCard("Your category spend summary will appear after the first expense.") }
-                    }
                     item {
-                        FolderSectionHeader(onCreateFolder = {
-                            onClearFolderMessage()
-                            createAttempted = false
-                            showCreateDialog = true
-                        })
+                        val categoryList = uiState.topCategories.mapIndexed { index, cat ->
+                            val topCatAmount = uiState.topCategories.maxOfOrNull { it.rawAmount } ?: 1.0
+                            val sharePercent = if (topCatAmount > 0) ((cat.rawAmount / topCatAmount) * 100).toInt() else 0
+                            
+                            val bgColors = listOf(CategoryFoodBg, CategoryShoppingBg, CategoryEntertainmentBg, CategorySalaryBg, IndigoSoft, GreenSoft, RoseSoft, AmberSoft)
+                            val fgColors = listOf(ChartColors[0], ChartColors[1], ChartColors[2], ChartColors[3], Indigo, Green, Rose, Amber)
+                            
+                            CategorySpend(
+                                name = cat.name,
+                                amount = cat.amount,
+                                iconLetter = cat.name.firstOrNull()?.uppercase() ?: "?",
+                                bgColor = bgColors[index % bgColors.size],
+                                fgColor = fgColors[index % fgColors.size],
+                                sharePercent = sharePercent
+                            )
+                        }
+                        
+                        val subtitle = if (uiState.topCategories.isNotEmpty()) {
+                            val totalSpend = uiState.topCategories.sumOf { it.rawAmount }
+                            val formattedSpend = java.text.NumberFormat.getCurrencyInstance(java.util.Locale.forLanguageTag("en-IN")).format(totalSpend)
+                            "This month · $formattedSpend across ${uiState.topCategories.size} categories"
+                        } else null
+                        
+                        SectionHeader(
+                            title = "Top Categories",
+                            subtitle = subtitle,
+                            actionText = "See all",
+                            onActionClick = { /* Navigate to full category breakdown */ }
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        if (categoryList.isEmpty()) {
+                            EmptyCard("Your category spend summary will appear after the first expense.")
+                        } else {
+                            TopCategoriesCard(categories = categoryList)
+                        }
                     }
-                    uiState.folderMessage?.let { message ->
-                        item { EmptyCard(message) }
-                    }
-                    if (uiState.folders.isEmpty()) {
-                        item { EmptyCard("📁 Create a folder to track your budgets.") }
-                    } else {
-                        items(uiState.folders) { folder ->
-                            FolderCard(
-                                folder = folder,
-                                usage = uiState.folderUsage.find { it.name == folder.name },
-                                onSetLimit = {
+                    
+                    item { Spacer(modifier = Modifier.height(24.dp)) }
+                    
+                    item {
+                        SectionHeader(
+                            title = "My Folders",
+                            actionText = "+ Create",
+                            onActionClick = {
+                                onClearFolderMessage()
+                                createAttempted = false
+                                showCreateDialog = true
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        
+                        if (uiState.folderMessage != null) {
+                            EmptyCard(uiState.folderMessage)
+                            Spacer(modifier = Modifier.height(10.dp))
+                        }
+                        
+                        if (uiState.folders.isEmpty()) {
+                            EmptyCard("📁 Create a folder to track your budgets.")
+                        } else {
+                            val folderList = uiState.folders.map { folder ->
+                                val usage = uiState.folderUsage.find { it.name == folder.name }
+                                FolderItem(
+                                    name = folder.name,
+                                    iconLetter = folder.name.firstOrNull()?.uppercase() ?: "?",
+                                    spent = usage?.usedAmount?.replace("₹", "")?.trim(),
+                                    limit = usage?.totalAmount?.replace("₹", "")?.trim()?.takeIf { folder.hasLimit },
+                                    rawName = folder.name,
+                                    progress = usage?.progress ?: 0f
+                                )
+                            }
+                            val isRemovableMap = uiState.folders.associate { it.name to it.isRemovable }
+                            MyFoldersCard(
+                                folders = folderList,
+                                onSetLimitClick = { folderName ->
                                     onClearFolderMessage()
-                                    selectedFolder = folder
+                                    selectedFolder = uiState.folders.find { it.name == folderName }
                                 },
                                 onDeleteFolder = onDeleteFolder,
-                                modifier = Modifier.fillMaxWidth()
+                                isRemovableMap = isRemovableMap,
+                                onViewAllClick = { showAllFoldersSheet = true }
                             )
                         }
                     }
@@ -228,6 +274,51 @@ fun HomeScreen(
                 selectedFolder = null
             }
         )
+    }
+
+    if (showAllFoldersSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showAllFoldersSheet = false },
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 24.dp)
+            ) {
+                Text(
+                    text = "All Folders",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)
+                )
+                LazyColumn {
+                    items(uiState.folders) { folder ->
+                        val usage = uiState.folderUsage.find { it.name == folder.name }
+                        val folderItem = FolderItem(
+                            name = folder.name,
+                            iconLetter = folder.name.firstOrNull()?.uppercase() ?: "?",
+                            spent = usage?.usedAmount?.replace("₹", "")?.trim(),
+                            limit = usage?.totalAmount?.replace("₹", "")?.trim()?.takeIf { folder.hasLimit },
+                            rawName = folder.name,
+                            progress = usage?.progress ?: 0f
+                        )
+                        FolderRow(
+                            folder = folderItem,
+                            onSetLimitClick = {
+                                showAllFoldersSheet = false
+                                onClearFolderMessage()
+                                selectedFolder = folder
+                            },
+                            onDeleteFolder = {
+                                onDeleteFolder(folder.name)
+                            },
+                            isRemovable = folder.isRemovable
+                        )
+                    }
+                }
+            }
+        }
     }
 
     LaunchedEffect(uiState.folders.size, uiState.folderMessage, showCreateDialog, createAttempted) {
