@@ -141,12 +141,17 @@ class FinanceRepository(
     }
 
     /**
-     * Appends a single immutable ledger entry. This is the only allowed write operation
-     * on the ledger — entries are never mutated or deleted.
+     * Appends a single immutable ledger entry.
      */
     private suspend fun appendLedgerEntry(entry: SavingsLedgerEntry) {
         val existing = getSavingsLedger().first()
         saveLedger(existing + entry)
+    }
+    
+    suspend fun deleteSavingsLedgerEntry(id: String) {
+        val existing = getSavingsLedger().first()
+        val filtered = existing.filter { "${it.folderId}_${it.closedAt}" != id }
+        saveLedger(filtered)
     }
 
     private suspend fun saveLedger(entries: List<SavingsLedgerEntry>) {

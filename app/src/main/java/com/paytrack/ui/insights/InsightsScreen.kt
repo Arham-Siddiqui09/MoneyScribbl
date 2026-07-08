@@ -1,6 +1,10 @@
 package com.paytrack.ui.insights
 
+
+
+import kotlin.math.roundToInt
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -11,6 +15,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,7 +33,12 @@ import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.EmojiEvents
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -37,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -67,6 +78,7 @@ import com.paytrack.viewmodel.SavingsLedgerEntryUiState
 import com.paytrack.viewmodel.TimePeriod
 import java.text.NumberFormat
 import java.util.Locale
+import kotlin.math.roundToInt
 
 // ─── Route ──────────────────────────────────────────────────────────────────
 
@@ -74,11 +86,13 @@ import java.util.Locale
 fun InsightsRoute(
     uiState: InsightsUiState,
     onChartPeriodSelected: (TimePeriod) -> Unit,
+    onDeleteVault: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     InsightsScreen(
         uiState = uiState,
         onChartPeriodSelected = onChartPeriodSelected,
+        onDeleteVault = onDeleteVault,
         modifier = modifier
     )
 }
@@ -89,6 +103,7 @@ fun InsightsRoute(
 fun InsightsScreen(
     uiState: InsightsUiState,
     onChartPeriodSelected: (TimePeriod) -> Unit,
+    onDeleteVault: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Scaffold(
@@ -173,7 +188,8 @@ fun InsightsScreen(
                             vaultTotal = uiState.savingsVaultTotal,
                             vaultRawTotal = uiState.savingsVaultRawTotal,
                             goalCount = uiState.vaultGoalCount,
-                            ledger = uiState.savingsLedger
+                            ledger = uiState.savingsLedger,
+                            onDeleteVault = onDeleteVault
                         )
                     }
 
@@ -280,9 +296,7 @@ private fun SpendingTrendCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "Spending Trend",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+                    "Spending Trend",style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold
                 )
                 // Week / Month toggle
                 Row(
@@ -346,7 +360,8 @@ private fun SavingsVaultCard(
     vaultTotal: String,
     vaultRawTotal: Double,
     goalCount: Int,
-    ledger: List<SavingsLedgerEntryUiState>
+    ledger: List<SavingsLedgerEntryUiState>,
+    onDeleteVault: (String) -> Unit
 ) {
     val gradientBrush = Brush.linearGradient(colors = GradientVault)
 
@@ -481,16 +496,46 @@ private fun SavingsVaultCard(
                             .padding(16.dp)
                     )
                 } else {
+                    var isExpanded by remember { mutableStateOf(false) }
+                    val displayLedger = if (isExpanded) ledger else ledger.take(3)
+                    
                     Column {
-                        ledger.forEachIndexed { index, entry ->
-                            LedgerRow(entry = entry)
-                            if (index < ledger.lastIndex) {
+                        displayLedger.forEachIndexed { index, entry ->
+                            LedgerRow(
+                                entry = entry,
+                                onDelete = { onDeleteVault(entry.id) }
+                            )
+                            if (index < displayLedger.lastIndex) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(horizontal = 14.dp)
                                         .height(1.dp)
                                         .background(Color(0x12000000))
+                                )
+                            }
+                        }
+                        
+                        if (ledger.size > 3) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp)
+                                    .height(1.dp)
+                                    .background(Color(0x12000000))
+                            )
+                            androidx.compose.material3.TextButton(
+                                onClick = { isExpanded = !isExpanded },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp),
+                                shape = RoundedCornerShape(bottomStart = 14.dp, bottomEnd = 14.dp)
+                            ) {
+                                Text(
+                                    text = if (isExpanded) "Show Less" else "View all ${ledger.size} vaults",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = Color(0xFF5B4CFC),
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                         }
@@ -513,7 +558,12 @@ private fun SavingsVaultCard(
 // ─── Ledger Row ───────────────────────────────────────────────────────────────
 
 @Composable
-private fun LedgerRow(entry: SavingsLedgerEntryUiState) {
+private fun LedgerRow(
+    entry: SavingsLedgerEntryUiState,
+    onDelete: () -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+    
     val animatedProgress by animateFloatAsState(
         targetValue = entry.spentPercent,
         animationSpec = spring(
@@ -561,6 +611,57 @@ private fun LedgerRow(entry: SavingsLedgerEntryUiState) {
                 color = Color(0xFF0FA968)
             )
         )
+
+        Box {
+            androidx.compose.material3.IconButton(
+                onClick = { showMenu = true },
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    imageVector = androidx.compose.material.icons.Icons.Default.MoreVert,
+                    contentDescription = "More Options",
+                    tint = Color(0xFF9CA3AF) // Subtle grey
+                )
+            }
+            androidx.compose.material3.DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false },
+                shape = RoundedCornerShape(16.dp),
+                containerColor = Color.White,
+                shadowElevation = 8.dp,
+                modifier = Modifier
+                    .background(Color.White, RoundedCornerShape(16.dp))
+                    .width(200.dp)
+            ) {
+                // Edit option (non-destructive, shown above for context)
+
+
+                // Delete option (destructive)
+                androidx.compose.material3.DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = "Delete Record",
+                            color = Color(0xFFDC2626),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Delete,
+                            contentDescription = null,
+                            tint = Color(0xFFDC2626),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    },
+                    onClick = {
+                        showMenu = false
+                        onDelete()
+                    },
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
+        }
     }
 }
 
@@ -638,7 +739,7 @@ private fun CategoryBreakdownCard(
             .background(MaterialTheme.colorScheme.surface)
             .padding(22.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
             // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -658,35 +759,86 @@ private fun CategoryBreakdownCard(
                 )
             }
 
-            val maxAmount = breakdown.maxOfOrNull { it.amount } ?: 1.0
+            val othersColor = Color(0xFFB0BEC5)
+            val topCount = 5
+            val topItems = breakdown.take(topCount)
+            val otherItems = breakdown.drop(topCount)
+            val othersAmount = otherItems.sumOf { it.amount }
+            
+            val total = breakdown.sumOf { it.amount }.let { if (it <= 0.0) 1.0 else it }
+            
+            val chartItems = if (othersAmount > 0) {
+                topItems +  com.paytrack.viewmodel.CategoryBreakdownUiState("Others", othersAmount)
+            } else {
+                topItems
+            }
+            val donutColors = topItems.mapIndexed { index, _ -> ChartColors[index % ChartColors.size] } + listOf(othersColor)
 
-            breakdown.take(5).forEachIndexed { index, item ->
-                val barColor = ChartColors[index % ChartColors.size]
-                val animatedProgress by animateFloatAsState(
-                    targetValue = (item.amount / maxAmount).toFloat().coerceIn(0f, 1f),
-                    animationSpec = spring(stiffness = Spring.StiffnessLow),
-                    label = "bar_$index"
+            // Donut chart with center total
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                DonutChart(
+                    items = chartItems,
+                    total = total,
+                    colors = donutColors,
+                    modifier = Modifier.size(190.dp)
                 )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "₹${String.format("%,.0f", total)}",
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            fontFamily = com.paytrack.ui.theme.IBMPlexMono
+                        ),
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Total Spend",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
-                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            // Legend list
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                breakdown.forEachIndexed { index, item ->
+                    val color = if (index < topCount) ChartColors[index % ChartColors.size] else othersColor
+                    val percent = (item.amount / total * 100)
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(8.dp)
-                                    .background(barColor, CircleShape)
+                                    .size(10.dp)
+                                    .background(color, CircleShape)
                             )
-                            Text(
-                                text = item.category,
-                                style = MaterialTheme.typography.titleSmall
-                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                Text(
+                                    text = item.category,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "${percent.roundToInt()}%",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                         Text(
                             text = "₹${String.format("%,.0f", item.amount)}",
@@ -696,25 +848,56 @@ private fun CategoryBreakdownCard(
                             fontWeight = FontWeight.Bold
                         )
                     }
-                    // Progress bar
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(7.dp)
-                            .background(
-                                MaterialTheme.colorScheme.surfaceVariant,
-                                RoundedCornerShape(999.dp)
-                            )
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(animatedProgress)
-                                .height(7.dp)
-                                .background(barColor, RoundedCornerShape(999.dp))
-                        )
-                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun DonutChart(
+    items: List<com.paytrack.viewmodel.CategoryBreakdownUiState>,
+    total: Double,
+    colors: List<Color>,
+    modifier: Modifier = Modifier
+) {
+    var animationPlayed by remember { mutableStateOf(false) }
+    LaunchedEffect(items) { animationPlayed = true }
+
+    val progress by animateFloatAsState(
+        targetValue = if (animationPlayed) 1f else 0f,
+        animationSpec = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+        label = "donut_progress"
+    )
+
+    val baseGapDegrees = if (items.size > 1) 4f else 0f
+
+    Canvas(modifier = modifier) {
+        val strokeWidth = size.minDimension * 0.16f
+        val diameter = size.minDimension - strokeWidth
+        val topLeft = Offset(
+            (size.width - diameter) / 2f,
+            (size.height - diameter) / 2f
+        )
+        val arcSize = Size(diameter, diameter)
+
+        var startAngle = -90f
+        items.forEachIndexed { index, item ->
+            val rawSweep = (item.amount / total * 360f).toFloat()
+            // Make sure small slices don't get swallowed by the gap, allowing them to animate
+            val actualGap = minOf(baseGapDegrees, rawSweep * 0.5f)
+            val sweep = (rawSweep - actualGap).coerceAtLeast(0f) * progress
+
+            drawArc(
+                color = colors[index % colors.size],
+                startAngle = startAngle,
+                sweepAngle = sweep,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+            )
+            startAngle += rawSweep
         }
     }
 }

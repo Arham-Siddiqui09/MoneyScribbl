@@ -179,7 +179,8 @@ fun FinanceNavGraph(
                 composable(INSIGHTS_ROUTE) {
                     InsightsRoute(
                         uiState = insightsUiState,
-                        onChartPeriodSelected = homeViewModel::updateInsightsChartPeriod
+                        onChartPeriodSelected = homeViewModel::updateInsightsChartPeriod,
+                        onDeleteVault = homeViewModel::deleteSavingsVaultEntry
                     )
                 }
 

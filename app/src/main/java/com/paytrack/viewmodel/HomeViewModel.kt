@@ -507,7 +507,7 @@ class HomeViewModel(
                     currentDayIndex = currentIndex,
                     isEmpty = points.none { point -> point.amount > 0.0 },
                     selectedChartPeriod = period,
-                    isLineGraph = period != TimePeriod.WEEK
+                    isLineGraph = period == TimePeriod.MONTH
                 )
             )
         }
@@ -520,8 +520,14 @@ class HomeViewModel(
             it.copy(
                 monthlyTrendPoints = points,
                 selectedTimePeriod = period,
-                isLineGraph = period != TimePeriod.WEEK
+                isLineGraph = period == TimePeriod.MONTH
             )
+        }
+    }
+
+    fun deleteSavingsVaultEntry(id: String) {
+        viewModelScope.launch {
+            repository.deleteSavingsLedgerEntry(id)
         }
     }
 
@@ -625,7 +631,7 @@ class HomeViewModel(
                     currentDayIndex = currentIndex,
                     isEmpty = points.none { point -> point.amount > 0.0 },
                     selectedChartPeriod = currentPeriod,
-                    isLineGraph = currentPeriod != TimePeriod.WEEK
+                    isLineGraph = currentPeriod == TimePeriod.MONTH
                 ),
                 topCategories = transactions
                     .filter { transaction -> transaction.type == TransactionType.EXPENSE }
@@ -709,6 +715,7 @@ class HomeViewModel(
             val spentPct = if (entry.limit > 0) (entry.spent / entry.limit).toFloat().coerceIn(0f, 1f) else 0f
             val closedDate = SimpleDateFormat("d MMM", Locale.ENGLISH).format(Date(entry.cycleEndDate))
             SavingsLedgerEntryUiState(
+                id = "${entry.folderId}_${entry.closedAt}",
                 folderName = entry.folderName,
                 spentPercent = spentPct,
                 spentLabel = "${rupeeCompact(entry.spent)} of ${rupeeCompact(entry.limit)}",
@@ -732,7 +739,7 @@ class HomeViewModel(
                     null -> "No transactions yet"
                 },
                 selectedTimePeriod = currentPeriod,
-                isLineGraph = currentPeriod != TimePeriod.WEEK,
+                isLineGraph = currentPeriod == TimePeriod.MONTH,
                 savingsVaultTotal = currencyFormatter.format(vaultTotal),
                 savingsVaultRawTotal = vaultTotal,
                 savingsLedger = ledgerUiState,

@@ -24,7 +24,7 @@ enum class HeroPeriod {
 }
 
 enum class TimePeriod {
-    WEEK, MONTH
+    WEEK, MONTH, YEARLY
 }
 
 data class WeeklyExpenseChartUiState(
@@ -91,7 +91,7 @@ data class InsightsUiState(
     val monthlyTrendPoints: List<ChartPointUiState> = emptyList(),
     val categoryBreakdown: List<CategoryBreakdownUiState> = emptyList(),
     val frequentTransactionType: String = "",
-    val selectedTimePeriod: TimePeriod = TimePeriod.MONTH,
+    val selectedTimePeriod: TimePeriod = TimePeriod.YEARLY,
     val isLineGraph: Boolean = true,
     // ── Savings Vault ─────────────────────────────────────────────────────────
     val savingsVaultTotal: String = "₹0",
@@ -103,6 +103,7 @@ data class InsightsUiState(
 )
 
 data class SavingsLedgerEntryUiState(
+    val id: String = "",
     val folderName: String = "",
     /** spent / limit, clamped to 0..1 for the progress ring. */
     val spentPercent: Float = 0f,
