@@ -138,6 +138,7 @@ fun FinanceNavGraph(
                         onOpenTransactions = { navController.navigate(TRANSACTIONS_ROUTE) },
                         onOpenQr = { navController.navigate(QR_ROUTE) },
                         onEditGoal = { navController.navigate(GOAL_FORM_ROUTE) },
+                        onClearGoal = { homeViewModel.clearSavingsGoal() },
                         onCreateFolder = homeViewModel::createFolder,
                         onSaveFolderLimit = homeViewModel::saveFolderLimit,
                         onClearFolderLimit = homeViewModel::clearFolderLimit,

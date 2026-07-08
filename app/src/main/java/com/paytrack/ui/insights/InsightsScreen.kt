@@ -761,18 +761,22 @@ private fun CategoryBreakdownCard(
 
             val othersColor = Color(0xFFB0BEC5)
             val topCount = 5
-            val topItems = breakdown.take(topCount)
-            val otherItems = breakdown.drop(topCount)
+            val sortedBreakdown = breakdown.sortedByDescending { it.amount }
+            val topItems = sortedBreakdown.take(topCount)
+            val otherItems = sortedBreakdown.drop(topCount)
             val othersAmount = otherItems.sumOf { it.amount }
             
-            val total = breakdown.sumOf { it.amount }.let { if (it <= 0.0) 1.0 else it }
+            val total = sortedBreakdown.sumOf { it.amount }.let { if (it <= 0.0) 1.0 else it }
             
-            val chartItems = if (othersAmount > 0) {
-                topItems +  com.paytrack.viewmodel.CategoryBreakdownUiState("Others", othersAmount)
-            } else {
-                topItems
-            }
-            val donutColors = topItems.mapIndexed { index, _ -> ChartColors[index % ChartColors.size] } + listOf(othersColor)
+            // Pair each item with its color and sort them descending by amount
+            val chartItemsWithColor = buildList {
+                topItems.forEachIndexed { index, item ->
+                    add(Pair(item, ChartColors[index % ChartColors.size]))
+                }
+                if (othersAmount > 0) {
+                    add(Pair(com.paytrack.viewmodel.CategoryBreakdownUiState("Others", othersAmount), othersColor))
+                }
+            }.sortedByDescending { it.first.amount }
 
             // Donut chart with center total
             Box(
@@ -782,9 +786,9 @@ private fun CategoryBreakdownCard(
                 contentAlignment = Alignment.Center
             ) {
                 DonutChart(
-                    items = chartItems,
+                    items = chartItemsWithColor.map { it.first },
                     total = total,
-                    colors = donutColors,
+                    colors = chartItemsWithColor.map { it.second },
                     modifier = Modifier.size(190.dp)
                 )
                 Column(
@@ -809,8 +813,7 @@ private fun CategoryBreakdownCard(
 
             // Legend list
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                breakdown.forEachIndexed { index, item ->
-                    val color = if (index < topCount) ChartColors[index % ChartColors.size] else othersColor
+                chartItemsWithColor.forEach { (item, color) ->
                     val percent = (item.amount / total * 100)
 
                     Row(
@@ -861,6 +864,10 @@ private fun DonutChart(
     colors: List<Color>,
     modifier: Modifier = Modifier
 ) {
+    require(colors.size >= items.size) {
+        "colors list must have at least as many entries as items — got ${colors.size} for ${items.size} items"
+    }
+
     var animationPlayed by remember { mutableStateOf(false) }
     LaunchedEffect(items) { animationPlayed = true }
 
@@ -869,8 +876,6 @@ private fun DonutChart(
         animationSpec = tween(durationMillis = 900, easing = FastOutSlowInEasing),
         label = "donut_progress"
     )
-
-    val baseGapDegrees = if (items.size > 1) 4f else 0f
 
     Canvas(modifier = modifier) {
         val strokeWidth = size.minDimension * 0.16f
@@ -881,23 +886,28 @@ private fun DonutChart(
         )
         val arcSize = Size(diameter, diameter)
 
-        var startAngle = -90f
-        items.forEachIndexed { index, item ->
+        val startAngles = mutableListOf<Float>()
+        var currentAngle = -90f
+        items.forEach { item ->
+            startAngles.add(currentAngle)
+            currentAngle += (item.amount / total * 360f).toFloat()
+        }
+
+        for (i in items.indices.reversed()) {
+            val item = items[i]
+            val startAngle = startAngles[i]
             val rawSweep = (item.amount / total * 360f).toFloat()
-            // Make sure small slices don't get swallowed by the gap, allowing them to animate
-            val actualGap = minOf(baseGapDegrees, rawSweep * 0.5f)
-            val sweep = (rawSweep - actualGap).coerceAtLeast(0f) * progress
+            val sweep = rawSweep * progress
 
             drawArc(
-                color = colors[index % colors.size],
+                color = colors[i],
                 startAngle = startAngle,
                 sweepAngle = sweep,
                 useCenter = false,
                 topLeft = topLeft,
                 size = arcSize,
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Butt)
             )
-            startAngle += rawSweep
         }
     }
 }

@@ -8,8 +8,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.DateRange
@@ -50,6 +51,7 @@ fun HomeRoute(
     onOpenTransactions: () -> Unit,
     onOpenQr: () -> Unit,
     onEditGoal: () -> Unit,
+    onClearGoal: () -> Unit,
     onCreateFolder: (String) -> Unit,
     onSaveFolderLimit: (String, Double, Long) -> Unit,
     onClearFolderLimit: (String) -> Unit,
@@ -66,6 +68,7 @@ fun HomeRoute(
         onOpenTransactions = onOpenTransactions,
         onOpenQr = onOpenQr,
         onEditGoal = onEditGoal,
+        onClearGoal = onClearGoal,
         onCreateFolder = onCreateFolder,
         onSaveFolderLimit = onSaveFolderLimit,
         onClearFolderLimit = onClearFolderLimit,
@@ -86,6 +89,7 @@ fun HomeScreen(
     onOpenTransactions: () -> Unit,
     onOpenQr: () -> Unit,
     onEditGoal: () -> Unit,
+    onClearGoal: () -> Unit,
     onCreateFolder: (String) -> Unit,
     onSaveFolderLimit: (String, Double, Long) -> Unit,
     onClearFolderLimit: (String) -> Unit,
@@ -143,7 +147,8 @@ fun HomeScreen(
                             progress = uiState.savingsProgress,
                             progressLabel = uiState.savingsProgressLabel,
                             goalSummary = uiState.goalSummary,
-                            onEditGoal = onEditGoal
+                            onEditGoal = onEditGoal,
+                            onClearGoal = onClearGoal
                         )
                     }
                     item {
@@ -222,7 +227,8 @@ fun HomeScreen(
                                     rawName = folder.name,
                                     progress = usage?.progress ?: 0f
                                 )
-                            }
+                            }.sortedWith(compareByDescending<FolderItem> { it.hasLimit }.thenByDescending { it.progress })
+                            
                             val isRemovableMap = uiState.folders.associate { it.name to it.isRemovable }
                             MyFoldersCard(
                                 folders = folderList,
@@ -293,9 +299,9 @@ fun HomeScreen(
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)
                 )
                 LazyColumn {
-                    items(uiState.folders) { folder ->
+                    val sortedFolders = uiState.folders.map { folder ->
                         val usage = uiState.folderUsage.find { it.name == folder.name }
-                        val folderItem = FolderItem(
+                        FolderItem(
                             name = folder.name,
                             iconLetter = folder.name.firstOrNull()?.uppercase() ?: "?",
                             spent = usage?.usedAmount?.replace("₹", "")?.trim(),
@@ -303,17 +309,20 @@ fun HomeScreen(
                             rawName = folder.name,
                             progress = usage?.progress ?: 0f
                         )
+                    }.sortedWith(compareByDescending<FolderItem> { it.hasLimit }.thenByDescending { it.progress })
+
+                    items(sortedFolders) { folderItem ->
                         FolderRow(
                             folder = folderItem,
                             onSetLimitClick = {
                                 showAllFoldersSheet = false
                                 onClearFolderMessage()
-                                selectedFolder = folder
+                                selectedFolder = uiState.folders.find { it.name == folderItem.rawName }
                             },
                             onDeleteFolder = {
-                                onDeleteFolder(folder.name)
+                                onDeleteFolder(folderItem.rawName)
                             },
-                            isRemovable = folder.isRemovable
+                            isRemovable = uiState.folders.find { it.name == folderItem.rawName }?.isRemovable ?: false
                         )
                     }
                 }
@@ -756,6 +765,7 @@ private fun GoalCard(
     progressLabel: String,
     goalSummary: String,
     onEditGoal: () -> Unit,
+    onClearGoal: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val animatedProgress by animateFloatAsState(
@@ -844,12 +854,35 @@ private fun GoalCard(
                 }
 
                 Box {
-                    IconButton(onClick = onEditGoal) {
+                    var menuExpanded by remember { mutableStateOf(false) }
+                    IconButton(onClick = { menuExpanded = true }) {
                         Icon(
-                            imageVector = Icons.Outlined.Edit,
-                            contentDescription = "Edit",
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Options",
                             tint = Color(0xFF98A2B3)
                         )
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                        modifier = Modifier.background(Color.White)
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Edit budget", color = TextMain) },
+                            onClick = {
+                                menuExpanded = false
+                                onEditGoal()
+                            }
+                        )
+                        if (isSet) {
+                            DropdownMenuItem(
+                                text = { Text("Clear budget", color = Red) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onClearGoal()
+                                }
+                            )
+                        }
                     }
                 }
             }

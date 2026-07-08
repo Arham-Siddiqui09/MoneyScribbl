@@ -260,6 +260,12 @@ class HomeViewModel(
         }
     }
 
+    fun clearSavingsGoal() {
+        viewModelScope.launch {
+            repository.clearSavingsGoal()
+        }
+    }
+
     fun setCameraPermission(granted: Boolean) {
         _qrUiState.update { it.copy(hasCameraPermission = granted) }
     }

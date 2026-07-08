@@ -140,6 +140,12 @@ class FinanceRepository(
         }
     }
 
+    suspend fun clearSavingsGoal() {
+        context.payTrackPreferencesDataStore.edit { preferences ->
+            preferences.remove(savingsGoalKey)
+        }
+    }
+
     /**
      * Appends a single immutable ledger entry.
      */
