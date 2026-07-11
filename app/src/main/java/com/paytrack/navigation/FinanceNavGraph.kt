@@ -126,6 +126,10 @@ fun FinanceNavGraph(
             NavHost(
                 navController = navController,
                 startDestination = HOME_ROUTE,
+                enterTransition = { androidx.compose.animation.EnterTransition.None },
+                exitTransition = { androidx.compose.animation.ExitTransition.None },
+                popEnterTransition = { androidx.compose.animation.EnterTransition.None },
+                popExitTransition = { androidx.compose.animation.ExitTransition.None },
                 modifier = Modifier
                     .padding(innerPadding)
                     .fillMaxSize()
@@ -193,9 +197,7 @@ fun FinanceNavGraph(
                         onNameChanged = profileViewModel::onNameChanged,
                         onPhoneChanged = profileViewModel::onPhoneChanged,
                         onProfileImageSelected = profileViewModel::onProfileImageSelected,
-                        onSaveProfile = profileViewModel::saveProfile,
                         onDeleteProfileImage = profileViewModel::deleteProfileImage,
-                        onSaveNavigationHandled = profileViewModel::onSaveNavigationHandled,
                         onImportSms = homeViewModel::importSmsHistory
                     )
                 }
@@ -270,14 +272,14 @@ private fun StandardBottomNav(
     onNavigate: (String) -> Unit,
     bottomPadding: androidx.compose.ui.unit.Dp
 ) {
-    val activeColor = Color(0xFF0F766E)
-    val inactiveColor = Color(0xFF98A2B3)
-    val borderColor = Color(0xFFE4E7EC)
+    val activeColor = MaterialTheme.colorScheme.primary
+    val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val borderColor = MaterialTheme.colorScheme.outlineVariant
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White)
+            .background(MaterialTheme.colorScheme.surface)
             .border(width = 1.dp, color = borderColor, shape = RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp))
             .padding(bottom = bottomPadding) // extra bottom padding to clear gesture bar
     ) {

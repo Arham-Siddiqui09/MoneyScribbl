@@ -44,14 +44,14 @@ import com.paytrack.viewmodel.QrScanUiState
 import com.paytrack.viewmodel.UpiAppUiState
 
 // Theme colors
-private val InkPrimary = Color(0xFF101828)
-private val MutedGray = Color(0xFF667085)
-private val LightGray = Color(0xFF98A2B3)
-private val DeepTeal = Color(0xFF0F766E)
+private val InkPrimary @Composable get() = MaterialTheme.colorScheme.onBackground
+private val MutedGray @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val LightGray @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val DeepTeal @Composable get() = MaterialTheme.colorScheme.primary
 private val Amber = Color(0xFFB45309)
-private val CrimsonRed = Color(0xFFB42318)
-private val CardBorder = Color(0xFFE4E7EC)
-private val PageBackground = Color(0xFFF5F6F8)
+private val CrimsonRed @Composable get() = MaterialTheme.colorScheme.error
+private val CardBorder @Composable get() = MaterialTheme.colorScheme.outlineVariant
+private val PageBackground @Composable get() = MaterialTheme.colorScheme.background
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -111,7 +111,7 @@ fun QrScanRoute(
         ModalBottomSheet(
             onDismissRequest = { showFolderSheet = false },
             sheetState = sheetState,
-            containerColor = Color.White,
+            containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
         ) {
             FolderSelectionSheetContent(
@@ -159,7 +159,7 @@ fun QrScanRoute(
             // Step 1: Amount & Folder
             StepLabel("STEP 1 · AMOUNT & FOLDER")
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color.White),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(20.dp),
                 border = BorderStroke(1.dp, CardBorder)
             ) {
@@ -237,7 +237,7 @@ fun QrScanRoute(
             // Step 2: Choose UPI App
             StepLabel("STEP 2 · CHOOSE UPI APP")
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color.White),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(20.dp),
                 border = BorderStroke(1.dp, CardBorder)
             ) {
@@ -371,7 +371,7 @@ fun FolderSelectionSheetContent(
         modifier = Modifier
             .fillMaxWidth()
             .fillMaxHeight(0.75f)
-            .background(Color.White)
+            .background(MaterialTheme.colorScheme.surface)
     ) {
         Row(
             modifier = Modifier
@@ -450,7 +450,7 @@ fun FolderSelectionSheetContent(
                                 .background(DeepTeal, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("✓", color = Color.White, fontSize = 14.sp)
+                            Text("✓", color = MaterialTheme.colorScheme.onPrimary, fontSize = 14.sp)
                         }
                     }
                 }
@@ -496,7 +496,7 @@ fun UpiAppTile(
                     .background(Color.LightGray.copy(alpha = alpha), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Text(app.label.take(1).uppercase(), color = Color.White)
+                Text(app.label.take(1).uppercase(), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Text(

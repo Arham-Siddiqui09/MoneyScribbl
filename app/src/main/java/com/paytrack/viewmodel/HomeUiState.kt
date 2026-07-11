@@ -4,6 +4,8 @@ import com.paytrack.data.TransactionType
 
 data class HomeUiState(
     val appName: String = "PayTrack",
+    val userName: String = "",
+    val profileImageUri: String? = null,
     val currentBalance: String = "",
     val totalIncome: String = "",
     val totalExpenses: String = "",
@@ -72,7 +74,8 @@ data class RecentTransactionUiState(
     val rawAmount: Double = 0.0,
     val rawDateMillis: Long = 0L,
     val isExpense: Boolean = true,
-    val category: String = ""
+    val category: String = "",
+    val note: String? = null
 )
 
 data class TransactionsUiState(

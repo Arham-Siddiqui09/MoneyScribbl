@@ -104,7 +104,6 @@ fun HomeScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
     var selectedFolder by remember { mutableStateOf<FolderUiState?>(null) }
     var createAttempted by remember { mutableStateOf(false) }
-    var showAllFoldersSheet by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -126,7 +125,11 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(24.dp)
                 ) {
                     item {
-                        HomeTopAppBar(onOpenProfile = onOpenProfile)
+                        HomeTopAppBar(
+                            userName = uiState.userName,
+                            profileImageUri = uiState.profileImageUri,
+                            onOpenProfile = onOpenProfile
+                        )
                     }
                   //  item { Spacer(modifier = Modifier.height(4.dp)) }
                     item {
@@ -186,7 +189,7 @@ fun HomeScreen(
                         SectionHeader(
                             title = "Top Categories",
                             subtitle = subtitle,
-                            actionText = "See all",
+                            actionText = "",
                             onActionClick = { /* Navigate to full category breakdown */ }
                         )
                         Spacer(modifier = Modifier.height(10.dp))
@@ -239,8 +242,7 @@ fun HomeScreen(
                                     selectedFolder = uiState.folders.find { it.name == folderName }
                                 },
                                 onDeleteFolder = onDeleteFolder,
-                                isRemovableMap = isRemovableMap,
-                                onViewAllClick = { showAllFoldersSheet = true }
+                                isRemovableMap = isRemovableMap
                             )
                         }
                     }
@@ -284,53 +286,7 @@ fun HomeScreen(
         )
     }
 
-    if (showAllFoldersSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showAllFoldersSheet = false },
-            containerColor = MaterialTheme.colorScheme.surface
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 24.dp)
-            ) {
-                Text(
-                    text = "All Folders",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)
-                )
-                LazyColumn {
-                    val sortedFolders = uiState.folders.map { folder ->
-                        val usage = uiState.folderUsage.find { it.name == folder.name }
-                        FolderItem(
-                            name = folder.name,
-                            iconLetter = folder.name.firstOrNull()?.uppercase() ?: "?",
-                            spent = usage?.usedAmount?.replace("₹", "")?.trim(),
-                            limit = usage?.totalAmount?.replace("₹", "")?.trim()?.takeIf { folder.hasLimit },
-                            rawName = folder.name,
-                            progress = usage?.progress ?: 0f
-                        )
-                    }.sortedWith(compareByDescending<FolderItem> { it.hasLimit }.thenByDescending { it.progress })
 
-                    items(sortedFolders) { folderItem ->
-                        FolderRow(
-                            folder = folderItem,
-                            onSetLimitClick = {
-                                showAllFoldersSheet = false
-                                onClearFolderMessage()
-                                selectedFolder = uiState.folders.find { it.name == folderItem.rawName }
-                            },
-                            onDeleteFolder = {
-                                onDeleteFolder(folderItem.rawName)
-                            },
-                            isRemovable = uiState.folders.find { it.name == folderItem.rawName }?.isRemovable ?: false
-                        )
-                    }
-                }
-            }
-        }
-    }
 
     LaunchedEffect(uiState.folders.size, uiState.folderMessage, showCreateDialog, createAttempted) {
         if (showCreateDialog && createAttempted && uiState.folderMessage == null) {
@@ -341,7 +297,11 @@ fun HomeScreen(
 }
 
 @Composable
-private fun HomeTopAppBar(onOpenProfile: () -> Unit) {
+private fun HomeTopAppBar(
+    userName: String,
+    profileImageUri: String?,
+    onOpenProfile: () -> Unit
+) {
     Column {
         Row(
             modifier = Modifier
@@ -356,27 +316,33 @@ private fun HomeTopAppBar(onOpenProfile: () -> Unit) {
                 modifier = Modifier
                     .size(42.dp)
                     .clip(CircleShape)
-                    .background(Brush.linearGradient(GradientHero))
+                    .background(if (profileImageUri == null) Brush.linearGradient(GradientHero) else androidx.compose.ui.graphics.SolidColor(Color.Transparent))
                     .clickable(onClick = onOpenProfile),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "A",
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                if (profileImageUri != null) {
+                    coil.compose.AsyncImage(
+                        model = java.io.File(profileImageUri),
+                        contentDescription = "Profile Picture",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                } else {
+                    val initials = userName.takeIf { it.isNotBlank() }?.take(1)?.uppercase() ?: "A"
+                    Text(
+                        text = initials,
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
             
             // Text
             Column {
+
                 Text(
-                    text = "Good morning ✨",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "Arham",
+                    text = userName.ifBlank { "Welcome" },
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontFamily = com.paytrack.ui.theme.SpaceGrotesk
                     ),
@@ -690,7 +656,7 @@ private fun ActionRow(
     ) {
         ActionPill(
             label = "Add",
-            subtitle = "Log a transaction",
+            subtitle = "Add manually",
             icon = Icons.Outlined.Add,
             iconColor = IndigoPrimary,
             iconBgColor = IndigoLight,
@@ -763,7 +729,8 @@ private fun ActionPill(
                     text = subtitle,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
             }
             Icon(
@@ -794,8 +761,8 @@ private fun GoalCard(
     val Teal = Color(0xFF0F766E)
     val Amber = Color(0xFFB45309)
     val Red = Color(0xFFB42318)
-    val TextMain = Color(0xFF101828)
-    val BorderColor = Color(0xFFE4E7EC)
+    val TextMain = MaterialTheme.colorScheme.onSurface
+    val BorderColor = MaterialTheme.colorScheme.outlineVariant
 
     val isSet = progressLabel != "Set a budget to stay on track"
 
@@ -817,7 +784,7 @@ private fun GoalCard(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
@@ -882,7 +849,7 @@ private fun GoalCard(
                     DropdownMenu(
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false },
-                        modifier = Modifier.background(Color.White)
+                        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                     ) {
                         DropdownMenuItem(
                             text = { Text("Edit budget", color = TextMain) },
@@ -968,28 +935,32 @@ private fun GoalCard(
                 }
                 
                 if (progress >= 0.8f && isSet) {
+                    val isExceeded = progress >= 1.0f
+                    val bgColor = if (isExceeded) MaterialTheme.colorScheme.errorContainer else statusColor.copy(alpha = 0.1f)
+                    val contentColor = if (isExceeded) MaterialTheme.colorScheme.onErrorContainer else statusColor
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(statusColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                            .background(bgColor, RoundedCornerShape(8.dp))
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(
-                            imageVector = if (progress >= 1.0f) Icons.Outlined.ErrorOutline else Icons.Outlined.WarningAmber,
+                            imageVector = if (isExceeded) Icons.Outlined.ErrorOutline else Icons.Outlined.WarningAmber,
                             contentDescription = null,
-                            tint = statusColor,
+                            tint = contentColor,
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
-                            text = if (progress >= 1.0f) "You have exceeded your budget limit for this period." else "You are approaching your budget limit.",
+                            text = if (isExceeded) "You have exceeded your budget limit for this period." else "You are approaching your budget limit.",
                             style = androidx.compose.ui.text.TextStyle(
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Default,
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 12.sp
                             ),
-                            color = statusColor
+                            color = contentColor
                         )
                     }
                 }
@@ -1171,7 +1142,7 @@ private fun FolderProgressRing(
                 text = initial,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF101828)
+                color = MaterialTheme.colorScheme.onSurface
             )
         } else {
             val percentString = "${(progress * 100).toInt()}%"
@@ -1182,7 +1153,7 @@ private fun FolderProgressRing(
                     fontSize = androidx.compose.ui.unit.TextUnit(12f, androidx.compose.ui.unit.TextUnitType.Sp),
                     fontWeight = FontWeight.Bold
                 ),
-                color = Color(0xFF101828)
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
     }
@@ -1199,8 +1170,8 @@ private fun FolderCard(
     val Teal = Color(0xFF0F766E)
     val Amber = Color(0xFFB45309)
     val Red = Color(0xFFB42318)
-    val TextMain = Color(0xFF101828)
-    val BorderColor = Color(0xFFE4E7EC)
+    val TextMain = MaterialTheme.colorScheme.onSurface
+    val BorderColor = MaterialTheme.colorScheme.outlineVariant
     
     val hasLimit = folder.hasLimit
     val progress = usage?.progress ?: 0f
@@ -1222,7 +1193,7 @@ private fun FolderCard(
     
     Card(
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
@@ -1270,7 +1241,7 @@ private fun FolderCard(
                     DropdownMenu(
                         expanded = showDropdown,
                         onDismissRequest = { showDropdown = false },
-                        modifier = Modifier.background(Color.White)
+                        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                     ) {
                         DropdownMenuItem(
                             text = { Text("Set limit", color = TextMain) },

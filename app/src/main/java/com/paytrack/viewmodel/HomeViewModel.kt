@@ -44,6 +44,7 @@ private const val SELECTED_CATEGORY_KEY = "selected_category"
 
 class HomeViewModel(
     private val repository: FinanceRepository,
+    private val userRepository: com.paytrack.data.UserRepository,
     private val appContext: Context,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -85,13 +86,15 @@ class HomeViewModel(
                 repository.getTransactions(),
                 repository.getSavingsGoal(),
                 repository.getFolders(),
-                repository.getSavingsLedger()
-            ) { transactions, goal, folders, ledger ->
+                repository.getSavingsLedger(),
+                userRepository.observeUser()
+            ) { transactions, goal, folders, ledger, user ->
                 object {
                     val t = transactions
                     val g = goal
                     val f = folders
                     val l = ledger
+                    val u = user
                 }
             }.collect { data ->
                 allTransactions.value = data.t
@@ -107,6 +110,11 @@ class HomeViewModel(
                         repository.sweepClosedFolders(data.t, System.currentTimeMillis())
                     }
                 }
+
+                _homeUiState.update { it.copy(
+                    userName = data.u?.name.orEmpty(),
+                    profileImageUri = data.u?.profileImagePath
+                ) }
 
                 updateHomeState(data.t, data.g, data.f)
                 updateTransactionsState(data.t, data.f)
@@ -424,7 +432,8 @@ class HomeViewModel(
                 category = category,
                 dateMillis = System.currentTimeMillis(),
                 note = "Paid through ${appLabel.ifBlank { "UPI" }}",
-                upiAppLabel = appLabel.ifBlank { null }
+                upiAppLabel = appLabel.ifBlank { null },
+                source = com.paytrack.data.TransactionSource.QR_UPI
             )
         }
         _qrUiState.update {
@@ -547,15 +556,18 @@ class HomeViewModel(
         goal: SavingsGoal?,
         folders: List<Folder>
     ) {
+        val cal = Calendar.getInstance()
+        val currentMonth = cal.get(Calendar.MONTH)
+        val currentYear = cal.get(Calendar.YEAR)
+        
+        val currentMonthTransactions = transactions.filter {
+            val tCal = Calendar.getInstance().apply { timeInMillis = it.dateMillis }
+            tCal.get(Calendar.MONTH) == currentMonth && tCal.get(Calendar.YEAR) == currentYear
+        }
+
         val heroPeriod = _homeUiState.value.heroPeriod
         val heroTransactions = if (heroPeriod == HeroPeriod.THIS_MONTH) {
-            val cal = Calendar.getInstance()
-            val currentMonth = cal.get(Calendar.MONTH)
-            val currentYear = cal.get(Calendar.YEAR)
-            transactions.filter {
-                val tCal = Calendar.getInstance().apply { timeInMillis = it.dateMillis }
-                tCal.get(Calendar.MONTH) == currentMonth && tCal.get(Calendar.YEAR) == currentYear
-            }
+            currentMonthTransactions
         } else {
             transactions
         }
@@ -639,7 +651,7 @@ class HomeViewModel(
                     selectedChartPeriod = currentPeriod,
                     isLineGraph = currentPeriod == TimePeriod.MONTH
                 ),
-                topCategories = transactions
+                topCategories = currentMonthTransactions
                     .filter { transaction -> transaction.type == TransactionType.EXPENSE }
                     .groupBy(FinanceTransaction::category)
                     .map { (category, items) ->
@@ -650,11 +662,7 @@ class HomeViewModel(
                             rawAmount = sumAmount
                         )
                     }
-                    .sortedByDescending { category ->
-                        transactions
-                            .filter { it.type == TransactionType.EXPENSE && it.category == category.name }
-                            .sumOf(FinanceTransaction::amount)
-                    }
+                    .sortedByDescending { it.rawAmount }
                     .take(4),
                 folders = folders.map { folder ->
                     FolderUiState(
@@ -847,9 +855,14 @@ class HomeViewModel(
             id = transaction.id,
             title = transaction.merchantName ?: transaction.category,
             subtitle = buildList {
-                add(transaction.category)
-                add(qrOriginLabel(transaction.source))
-                transaction.upiAppLabel?.let(::add)
+                if (!transaction.merchantName.isNullOrBlank()) {
+                    add(transaction.category)
+                }
+                if (transaction.upiAppLabel != null) {
+                    add("UPI Payment")
+                } else {
+                    add(qrOriginLabel(transaction.source))
+                }
             }.joinToString(" • "),
             time = timeFormatter.format(Date(transaction.dateMillis)),
             amount = if (transaction.type == TransactionType.EXPENSE) {
@@ -860,7 +873,8 @@ class HomeViewModel(
             rawAmount = if (transaction.type == TransactionType.EXPENSE) -transaction.amount else transaction.amount,
             rawDateMillis = transaction.dateMillis,
             isExpense = transaction.type == TransactionType.EXPENSE,
-            category = transaction.category
+            category = transaction.category,
+            note = transaction.note
         )
     }
 
@@ -959,19 +973,24 @@ class HomeViewModel(
 
 class HomeViewModelFactory(
     private val repository: FinanceRepository,
-    private val appContext: Context
-) : ViewModelProvider.Factory {
+    private val userRepository: com.paytrack.data.UserRepository,
+    private val appContext: Context,
+    owner: androidx.savedstate.SavedStateRegistryOwner,
+    defaultArgs: android.os.Bundle? = null
+) : androidx.lifecycle.AbstractSavedStateViewModelFactory(owner, defaultArgs) {
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(
+        key: String,
         modelClass: Class<T>,
-        extras: CreationExtras
+        handle: SavedStateHandle
     ): T {
         if (modelClass.isAssignableFrom(HomeViewModel::class.java)) {
             return HomeViewModel(
                 repository = repository,
+                userRepository = userRepository,
                 appContext = appContext,
-                savedStateHandle = extras.createSavedStateHandle()
+                savedStateHandle = handle
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

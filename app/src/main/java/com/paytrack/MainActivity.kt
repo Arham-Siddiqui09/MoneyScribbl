@@ -29,7 +29,9 @@ class MainActivity : ComponentActivity() {
     private val homeViewModel: HomeViewModel by viewModels {
         HomeViewModelFactory(
             repository = financeRepository,
-            appContext = applicationContext
+            userRepository = userRepository,
+            appContext = applicationContext,
+            owner = this
         )
     }
 
