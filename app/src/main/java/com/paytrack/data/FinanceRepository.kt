@@ -146,6 +146,15 @@ class FinanceRepository(
         }
     }
 
+    suspend fun clearAllData() {
+        context.payTrackPreferencesDataStore.edit { preferences ->
+            preferences.remove(transactionsKey)
+            preferences.remove(savingsGoalKey)
+            preferences.remove(foldersKey)
+            preferences.remove(savingsLedgerKey)
+        }
+    }
+
     /**
      * Appends a single immutable ledger entry.
      */

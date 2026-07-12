@@ -239,6 +239,7 @@ class HomeViewModel(
         when {
             trimmedNewName.isBlank() -> updateFolderMessage("Enter a folder name.")
             oldName.equals(FALLBACK_FOLDER, ignoreCase = true) -> updateFolderMessage("The Other folder cannot be renamed.")
+            oldName.equals(com.paytrack.sms.SmsBankParser.SMS_FOLDER_NAME, ignoreCase = true) -> updateFolderMessage("The SMS Transactions folder cannot be renamed.")
             !oldName.equals(trimmedNewName, ignoreCase = true) && allFolders.value.any { it.name.equals(trimmedNewName, ignoreCase = true) } -> {
                 updateFolderMessage("A folder with that name already exists.")
             }
@@ -254,6 +255,10 @@ class HomeViewModel(
     fun deleteFolder(name: String) {
         if (name.equals(FALLBACK_FOLDER, ignoreCase = true)) {
             updateFolderMessage("The Other folder cannot be deleted.")
+            return
+        }
+        if (name.equals(com.paytrack.sms.SmsBankParser.SMS_FOLDER_NAME, ignoreCase = true)) {
+            updateFolderMessage("The SMS Transactions folder cannot be deleted.")
             return
         }
 
@@ -370,6 +375,7 @@ class HomeViewModel(
 
     fun updateSelectedQrCategory(category: String) {
         savedStateHandle[SELECTED_CATEGORY_KEY] = category
+
         refreshQrDerivedState()
     }
 
@@ -378,6 +384,13 @@ class HomeViewModel(
         savedStateHandle[AMOUNT_INPUT_KEY] = value
         _qrUiState.update { it.copy(amountInput = value, paymentError = null) }
         refreshQrDerivedState()
+    }
+
+    fun clearAllData() {
+        viewModelScope.launch {
+            repository.clearAllData()
+            userRepository.clearAllData()
+        }
     }
 
     fun refreshInstalledUpiApps() {
@@ -725,7 +738,7 @@ class HomeViewModel(
                 folders = folders.map { folder ->
                     FolderUiState(
                         name = folder.name,
-                        isRemovable = !folder.name.equals(FALLBACK_FOLDER, ignoreCase = true),
+                        isRemovable = !folder.name.equals(FALLBACK_FOLDER, ignoreCase = true) && !folder.name.equals(com.paytrack.sms.SmsBankParser.SMS_FOLDER_NAME, ignoreCase = true),
                         limitSummary = folder.limitAmount?.let { amount ->
                             folder.limitEndDateMillis?.let { endDate ->
                                 "${currencyFormatter.format(amount)} till ${dateFormatter.format(Date(endDate))}"

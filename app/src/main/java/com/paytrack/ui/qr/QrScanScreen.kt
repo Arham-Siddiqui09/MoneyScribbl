@@ -128,7 +128,7 @@ fun QrScanRoute(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = PageBackground
+        containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         Column(
             modifier = Modifier

@@ -28,6 +28,7 @@ val Inter = FontFamily(
 )
 
 val IBMPlexMono = FontFamily(
+    Font(googleFont = GoogleFont("IBM Plex Mono"), fontProvider = provider, weight = FontWeight.Normal),
     Font(googleFont = GoogleFont("IBM Plex Mono"), fontProvider = provider, weight = FontWeight.Medium),
     Font(googleFont = GoogleFont("IBM Plex Mono"), fontProvider = provider, weight = FontWeight.SemiBold)
 )

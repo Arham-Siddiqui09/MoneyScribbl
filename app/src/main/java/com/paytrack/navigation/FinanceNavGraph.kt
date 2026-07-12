@@ -63,6 +63,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.paytrack.ui.goal.GoalFormRoute
 import com.paytrack.ui.home.HomeRoute
+import com.paytrack.ui.home.SplashScreen
 import com.paytrack.ui.insights.InsightsRoute
 import com.paytrack.ui.profile.ProfileRoute
 import com.paytrack.ui.profile.PrivacyPolicyScreen
@@ -74,6 +75,7 @@ import com.paytrack.ui.theme.IndigoPrimary
 import com.paytrack.viewmodel.HomeViewModel
 import com.paytrack.viewmodel.ProfileViewModel
 
+private const val SPLASH_ROUTE = "splash"
 private const val HOME_ROUTE = "home"
 private const val TRANSACTIONS_ROUTE = "transactions"
 private const val QR_ROUTE = "qr_scan"
@@ -115,7 +117,8 @@ fun FinanceNavGraph(
     )
 
     val currentRoute = currentDestination?.route
-    val hideBottomBar = currentRoute?.startsWith(TRANSACTION_FORM_ROUTE) == true ||
+    val hideBottomBar = currentRoute == SPLASH_ROUTE ||
+        currentRoute?.startsWith(TRANSACTION_FORM_ROUTE) == true ||
         currentRoute == GOAL_FORM_ROUTE ||
         currentRoute == PROFILE_ROUTE ||
         currentRoute == PRIVACY_POLICY_ROUTE ||
@@ -131,7 +134,7 @@ fun FinanceNavGraph(
         ) { innerPadding ->
             NavHost(
                 navController = navController,
-                startDestination = HOME_ROUTE,
+                startDestination = SPLASH_ROUTE,
                 enterTransition = { androidx.compose.animation.EnterTransition.None },
                 exitTransition = { androidx.compose.animation.ExitTransition.None },
                 popEnterTransition = { androidx.compose.animation.EnterTransition.None },
@@ -140,6 +143,16 @@ fun FinanceNavGraph(
                     .padding(innerPadding)
                     .fillMaxSize()
             ) {
+                composable(SPLASH_ROUTE) {
+                    SplashScreen(
+                        onNavigateToHome = {
+                            navController.navigate(HOME_ROUTE) {
+                                popUpTo(SPLASH_ROUTE) { inclusive = true }
+                            }
+                        }
+                    )
+                }
+
                 composable(HOME_ROUTE) {
                     HomeRoute(
                         uiState = homeUiState,
@@ -203,7 +216,6 @@ fun FinanceNavGraph(
                         onNavigateBack = { navController.popBackStack() },
                         onDarkModeToggle = profileViewModel::onDarkModeToggle,
                         onNameChanged = profileViewModel::onNameChanged,
-                        onPhoneChanged = profileViewModel::onPhoneChanged,
                         onProfileImageSelected = profileViewModel::onProfileImageSelected,
                         onDeleteProfileImage = profileViewModel::deleteProfileImage,
                         onImportSms = homeViewModel::importSmsHistory,
@@ -211,7 +223,8 @@ fun FinanceNavGraph(
                         onBudgetCycleChanged = profileViewModel::onBudgetCycleChanged,
                         dailyExpenditures = homeUiState.dailyExpenditures,
                         onOpenPrivacyPolicy = { navController.navigate(PRIVACY_POLICY_ROUTE) },
-                        onOpenTerms = { navController.navigate(TERMS_OF_SERVICE_ROUTE) }
+                        onOpenTerms = { navController.navigate(TERMS_OF_SERVICE_ROUTE) },
+                        onClearData = { homeViewModel.clearAllData() }
                     )
                 }
 
