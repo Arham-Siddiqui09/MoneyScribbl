@@ -65,6 +65,8 @@ import com.paytrack.ui.goal.GoalFormRoute
 import com.paytrack.ui.home.HomeRoute
 import com.paytrack.ui.insights.InsightsRoute
 import com.paytrack.ui.profile.ProfileRoute
+import com.paytrack.ui.profile.PrivacyPolicyScreen
+import com.paytrack.ui.profile.TermsOfServiceScreen
 import com.paytrack.ui.qr.QrScanRoute
 import com.paytrack.ui.transactions.TransactionFormRoute
 import com.paytrack.ui.transactions.TransactionsRoute
@@ -79,6 +81,8 @@ private const val INSIGHTS_ROUTE = "insights"
 private const val PROFILE_ROUTE = "profile"
 private const val TRANSACTION_FORM_ROUTE = "transaction_form"
 private const val GOAL_FORM_ROUTE = "goal_form"
+private const val PRIVACY_POLICY_ROUTE = "privacy_policy"
+private const val TERMS_OF_SERVICE_ROUTE = "terms_of_service"
 private const val TRANSACTION_ID_ARG = "transactionId"
 
 private data class BottomBarDestination(
@@ -113,7 +117,9 @@ fun FinanceNavGraph(
     val currentRoute = currentDestination?.route
     val hideBottomBar = currentRoute?.startsWith(TRANSACTION_FORM_ROUTE) == true ||
         currentRoute == GOAL_FORM_ROUTE ||
-        currentRoute == PROFILE_ROUTE
+        currentRoute == PROFILE_ROUTE ||
+        currentRoute == PRIVACY_POLICY_ROUTE ||
+        currentRoute == TERMS_OF_SERVICE_ROUTE
 
     val navInsets = WindowInsets.navigationBars.asPaddingValues()
 
@@ -144,6 +150,7 @@ fun FinanceNavGraph(
                         onEditGoal = { navController.navigate(GOAL_FORM_ROUTE) },
                         onClearGoal = { homeViewModel.clearSavingsGoal() },
                         onCreateFolder = homeViewModel::createFolder,
+                        onRenameFolder = homeViewModel::renameFolder,
                         onSaveFolderLimit = homeViewModel::saveFolderLimit,
                         onClearFolderLimit = homeViewModel::clearFolderLimit,
                         onDeleteFolder = homeViewModel::deleteFolder,
@@ -185,6 +192,7 @@ fun FinanceNavGraph(
                     InsightsRoute(
                         uiState = insightsUiState,
                         onChartPeriodSelected = homeViewModel::updateInsightsChartPeriod,
+                        onCategoryBreakdownPeriodSelected = homeViewModel::updateCategoryBreakdownPeriod,
                         onDeleteVault = homeViewModel::deleteSavingsVaultEntry
                     )
                 }
@@ -198,7 +206,24 @@ fun FinanceNavGraph(
                         onPhoneChanged = profileViewModel::onPhoneChanged,
                         onProfileImageSelected = profileViewModel::onProfileImageSelected,
                         onDeleteProfileImage = profileViewModel::deleteProfileImage,
-                        onImportSms = homeViewModel::importSmsHistory
+                        onImportSms = homeViewModel::importSmsHistory,
+                        onCurrencyChanged = profileViewModel::onCurrencyChanged,
+                        onBudgetCycleChanged = profileViewModel::onBudgetCycleChanged,
+                        dailyExpenditures = homeUiState.dailyExpenditures,
+                        onOpenPrivacyPolicy = { navController.navigate(PRIVACY_POLICY_ROUTE) },
+                        onOpenTerms = { navController.navigate(TERMS_OF_SERVICE_ROUTE) }
+                    )
+                }
+
+                composable(PRIVACY_POLICY_ROUTE) {
+                    PrivacyPolicyScreen(
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
+
+                composable(TERMS_OF_SERVICE_ROUTE) {
+                    TermsOfServiceScreen(
+                        onNavigateBack = { navController.popBackStack() }
                     )
                 }
 

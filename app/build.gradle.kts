@@ -29,6 +29,7 @@ android {
         }
     }
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
@@ -66,6 +67,8 @@ dependencies {
     implementation(libs.vico.compose.m3)
     implementation(libs.mlkit.barcode.scanning)
     implementation(libs.coil.compose)
+    implementation("com.kizitonwose.calendar:compose:2.6.2")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
     ksp(libs.androidx.room.compiler)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

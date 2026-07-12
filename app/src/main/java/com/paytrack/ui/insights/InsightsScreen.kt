@@ -11,7 +11,9 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -61,6 +64,7 @@ import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
@@ -86,12 +90,14 @@ import kotlin.math.roundToInt
 fun InsightsRoute(
     uiState: InsightsUiState,
     onChartPeriodSelected: (TimePeriod) -> Unit,
+    onCategoryBreakdownPeriodSelected: (TimePeriod) -> Unit,
     onDeleteVault: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     InsightsScreen(
         uiState = uiState,
         onChartPeriodSelected = onChartPeriodSelected,
+        onCategoryBreakdownPeriodSelected = onCategoryBreakdownPeriodSelected,
         onDeleteVault = onDeleteVault,
         modifier = modifier
     )
@@ -103,6 +109,7 @@ fun InsightsRoute(
 fun InsightsScreen(
     uiState: InsightsUiState,
     onChartPeriodSelected: (TimePeriod) -> Unit,
+    onCategoryBreakdownPeriodSelected: (TimePeriod) -> Unit,
     onDeleteVault: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -189,14 +196,18 @@ fun InsightsScreen(
                             vaultRawTotal = uiState.savingsVaultRawTotal,
                             goalCount = uiState.vaultGoalCount,
                             ledger = uiState.savingsLedger,
+                            currencyCode = uiState.currencyCode,
                             onDeleteVault = onDeleteVault
                         )
                     }
 
-                    // ── Category Breakdown ───────────────────────────────────
                     if (uiState.categoryBreakdown.isNotEmpty()) {
                         item {
-                            CategoryBreakdownCard(breakdown = uiState.categoryBreakdown)
+                            CategoryBreakdownCard(
+                                breakdown = uiState.categoryBreakdown,
+                                selectedPeriod = uiState.selectedCategoryBreakdownPeriod,
+                                onPeriodSelected = onCategoryBreakdownPeriodSelected
+                            )
                         }
                     }
 
@@ -298,40 +309,10 @@ private fun SpendingTrendCard(
                 Text(
                     "Spending Trend",style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold
                 )
-                // Week / Month toggle
-                Row(
-                    modifier = Modifier
-                        .background(
-                            MaterialTheme.colorScheme.surfaceVariant,
-                            RoundedCornerShape(12.dp)
-                        ),
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    TimePeriod.entries.forEach { period ->
-                        val isSelected = uiState.selectedTimePeriod == period
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(
-                                    if (isSelected) MaterialTheme.colorScheme.primary
-                                    else Color.Transparent
-                                )
-                                .clickable { onChartPeriodSelected(period) }
-                                .padding(horizontal = 14.dp, vertical = 7.dp)
-                        ) {
-                            Text(
-                                text = period.name.lowercase()
-                                    .replaceFirstChar { it.uppercase() },
-                                color = if (isSelected)
-                                    MaterialTheme.colorScheme.onPrimary
-                                else
-                                    MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                            )
-                        }
-                    }
-                }
+                TimePeriodToggle(
+                    selectedPeriod = uiState.selectedTimePeriod,
+                    onPeriodSelected = onChartPeriodSelected
+                )
             }
 
             if (uiState.monthlyTrendPoints.isEmpty()) {
@@ -361,6 +342,7 @@ private fun SavingsVaultCard(
     vaultRawTotal: Double,
     goalCount: Int,
     ledger: List<SavingsLedgerEntryUiState>,
+    currencyCode: String,
     onDeleteVault: (String) -> Unit
 ) {
     val gradientBrush = Brush.linearGradient(colors = GradientVault)
@@ -373,8 +355,14 @@ private fun SavingsVaultCard(
             animationSpec = tween(durationMillis = 1200)
         )
     }
-    val displayTotal = remember(animatedValue.value) {
-        val formatter = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("en-IN"))
+    val displayTotal = remember(animatedValue.value, currencyCode) {
+        val locale = when (currencyCode) {
+            "USD" -> Locale.US
+            "EUR" -> Locale.forLanguageTag("en-IE")
+            "GBP" -> Locale.UK
+            else -> Locale.forLanguageTag("en-IN")
+        }
+        val formatter = NumberFormat.getCurrencyInstance(locale)
         formatter.format(animatedValue.value.toDouble())
     }
 
@@ -729,7 +717,9 @@ private fun SpentRing(
 
 @Composable
 private fun CategoryBreakdownCard(
-    breakdown: List<com.paytrack.viewmodel.CategoryBreakdownUiState>
+    breakdown: List<com.paytrack.viewmodel.CategoryBreakdownUiState>,
+    selectedPeriod: TimePeriod,
+    onPeriodSelected: (TimePeriod) -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -748,14 +738,12 @@ private fun CategoryBreakdownCard(
             ) {
                 Text(
                     "Category Breakdown",
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
-                Icon(
-                    imageVector = Icons.Outlined.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
+                TimePeriodToggle(
+                    selectedPeriod = selectedPeriod,
+                    onPeriodSelected = onPeriodSelected
                 )
             }
 
@@ -908,6 +896,94 @@ private fun DonutChart(
                 size = arcSize,
                 style = Stroke(width = strokeWidth, cap = StrokeCap.Butt)
             )
+        }
+    }
+}
+// --- Shared Components ---------------------------------------------------------
+@Composable
+fun TimePeriodToggle(
+    selectedPeriod: com.paytrack.viewmodel.TimePeriod,
+    onPeriodSelected: (com.paytrack.viewmodel.TimePeriod) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .background(
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                androidx.compose.foundation.shape.CircleShape
+            )
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                shape = androidx.compose.foundation.shape.CircleShape
+            )
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.Center
+    ) {
+        com.paytrack.viewmodel.TimePeriod.entries.forEach { period ->
+            val isSelected = selectedPeriod == period
+
+            val backgroundColor by androidx.compose.animation.animateColorAsState(
+                targetValue = if (isSelected)
+                    Color(0xFF6366F1)
+                else
+                    androidx.compose.ui.graphics.Color.Transparent,
+                animationSpec = tween(durationMillis = 250),
+                label = "pillBackground"
+            )
+
+            val textColor by androidx.compose.animation.animateColorAsState(
+                targetValue = if (isSelected)
+                    Color.White
+                else
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                animationSpec = tween(durationMillis = 250),
+                label = "pillText"
+            )
+
+            val scale by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (isSelected) 1f else 0.96f,
+                animationSpec = androidx.compose.animation.core.spring(
+                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                    stiffness = androidx.compose.animation.core.Spring.StiffnessLow
+                ),
+                label = "pillScale"
+            )
+
+            Box(
+                modifier = Modifier
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    }
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(backgroundColor)
+                    .then(
+                        if (isSelected) Modifier.shadow(
+                            elevation = 4.dp,
+                            shape = androidx.compose.foundation.shape.CircleShape,
+                            ambientColor = Color(0xFF6366F1).copy(alpha = 0.4f),
+                            spotColor = Color(0xFF6366F1).copy(alpha = 0.4f)
+                        ) else Modifier
+                    )
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onPeriodSelected(period) }
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+            ) {
+                Text(
+                    text = period.name.lowercase()
+                        .replaceFirstChar { it.uppercase() },
+                    color = textColor,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = if (isSelected)
+                        androidx.compose.ui.text.font.FontWeight.SemiBold
+                    else
+                        androidx.compose.ui.text.font.FontWeight.Medium,
+                    letterSpacing = 0.2.sp
+                )
+            }
         }
     }
 }

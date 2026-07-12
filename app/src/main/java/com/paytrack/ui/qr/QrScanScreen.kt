@@ -213,7 +213,7 @@ fun QrScanRoute(
                     ) {
                         if (selectedFolderInfo != null) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                FolderAvatar(selectedFolderInfo.name, 36)
+                                FolderAvatar(selectedFolderInfo.name, 36, selectedFolderInfo.emoji)
                                 Column {
                                     Text(selectedFolderInfo.name, fontWeight = FontWeight.SemiBold, color = InkPrimary)
                                     selectedFolderInfo.availableBudgetLabel?.let {
@@ -429,7 +429,7 @@ fun FolderSelectionSheetContent(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        FolderAvatar(category.name, 40)
+                        FolderAvatar(category.name, 40, category.emoji)
                         Column {
                             Text(category.name, fontWeight = FontWeight.SemiBold, color = InkPrimary)
                             category.availableBudgetLabel?.let {
@@ -510,7 +510,7 @@ fun UpiAppTile(
 }
 
 @Composable
-fun FolderAvatar(name: String, sizeDp: Int) {
+fun FolderAvatar(name: String, sizeDp: Int, emoji: String? = null) {
     val initial = name.take(1).uppercase()
     val colors = listOf(Color(0xFFE0F2FE), Color(0xFFFEF3C7), Color(0xFFFCE7F3), Color(0xFFD1FAE5))
     val textColors = listOf(Color(0xFF0369A1), Color(0xFFB45309), Color(0xFFBE185D), Color(0xFF047857))
@@ -519,15 +519,22 @@ fun FolderAvatar(name: String, sizeDp: Int) {
     Box(
         modifier = Modifier
             .size(sizeDp.dp)
-            .background(colors[hash], CircleShape),
+            .background(if (emoji != null) Color.Transparent else colors[hash], CircleShape),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = initial,
-            color = textColors[hash],
-            fontWeight = FontWeight.Bold,
-            fontSize = (sizeDp / 2.2).sp
-        )
+        if (emoji != null) {
+            Text(
+                text = emoji,
+                fontSize = (sizeDp / 1.5).sp
+            )
+        } else {
+            Text(
+                text = initial,
+                color = textColors[hash],
+                fontWeight = FontWeight.Bold,
+                fontSize = (sizeDp / 2.2).sp
+            )
+        }
     }
 }
 

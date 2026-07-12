@@ -54,7 +54,8 @@ fun HomeRoute(
     onOpenQr: () -> Unit,
     onEditGoal: () -> Unit,
     onClearGoal: () -> Unit,
-    onCreateFolder: (String) -> Unit,
+    onCreateFolder: (String, String?) -> Unit,
+    onRenameFolder: (String, String, String?) -> Unit,
     onSaveFolderLimit: (String, Double, Long) -> Unit,
     onClearFolderLimit: (String) -> Unit,
     onDeleteFolder: (String) -> Unit,
@@ -72,6 +73,7 @@ fun HomeRoute(
         onEditGoal = onEditGoal,
         onClearGoal = onClearGoal,
         onCreateFolder = onCreateFolder,
+        onRenameFolder = onRenameFolder,
         onSaveFolderLimit = onSaveFolderLimit,
         onClearFolderLimit = onClearFolderLimit,
         onDeleteFolder = onDeleteFolder,
@@ -92,7 +94,8 @@ fun HomeScreen(
     onOpenQr: () -> Unit,
     onEditGoal: () -> Unit,
     onClearGoal: () -> Unit,
-    onCreateFolder: (String) -> Unit,
+    onCreateFolder: (String, String?) -> Unit,
+    onRenameFolder: (String, String, String?) -> Unit,
     onSaveFolderLimit: (String, Double, Long) -> Unit,
     onClearFolderLimit: (String) -> Unit,
     onDeleteFolder: (String) -> Unit,
@@ -103,7 +106,10 @@ fun HomeScreen(
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
     var selectedFolder by remember { mutableStateOf<FolderUiState?>(null) }
+    var folderToRename by remember { mutableStateOf<FolderUiState?>(null) }
     var createAttempted by remember { mutableStateOf(false) }
+    var renameAttempted by remember { mutableStateOf(false) }
+    var showCalendarDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -128,7 +134,8 @@ fun HomeScreen(
                         HomeTopAppBar(
                             userName = uiState.userName,
                             profileImageUri = uiState.profileImageUri,
-                            onOpenProfile = onOpenProfile
+                            onOpenProfile = onOpenProfile,
+                            onOpenCalendar = { showCalendarDialog = true }
                         )
                     }
                   //  item { Spacer(modifier = Modifier.height(4.dp)) }
@@ -159,6 +166,7 @@ fun HomeScreen(
                     item {
                         WeeklyChartCard(
                             chartState = uiState.weeklyExpenseChart,
+                            currencyCode = uiState.currencyCode,
                             onChartPeriodSelected = onChartPeriodSelected
                         )
                     }
@@ -176,13 +184,20 @@ fun HomeScreen(
                                 iconLetter = cat.name.firstOrNull()?.uppercase() ?: "?",
                                 bgColor = bgColors[index % bgColors.size],
                                 fgColor = fgColors[index % fgColors.size],
-                                sharePercent = sharePercent
+                                sharePercent = sharePercent,
+                                emoji = cat.emoji
                             )
                         }
                         
                         val subtitle = if (uiState.topCategories.isNotEmpty()) {
                             val totalSpend = uiState.topCategories.sumOf { it.rawAmount }
-                            val formattedSpend = java.text.NumberFormat.getCurrencyInstance(java.util.Locale.forLanguageTag("en-IN")).format(totalSpend)
+                            val locale = when (uiState.currencyCode) {
+                                "USD" -> java.util.Locale.US
+                                "EUR" -> java.util.Locale.forLanguageTag("en-IE")
+                                "GBP" -> java.util.Locale.UK
+                                else -> java.util.Locale.forLanguageTag("en-IN")
+                            }
+                            val formattedSpend = java.text.NumberFormat.getCurrencyInstance(locale).format(totalSpend)
                             "This month · $formattedSpend across ${uiState.topCategories.size} categories"
                         } else null
                         
@@ -227,6 +242,7 @@ fun HomeScreen(
                                 FolderItem(
                                     name = folder.name,
                                     iconLetter = folder.name.firstOrNull()?.uppercase() ?: "?",
+                                    emoji = folder.emoji,
                                     spent = usage?.usedAmount?.replace("₹", "")?.trim(),
                                     limit = usage?.totalAmount?.replace("₹", "")?.trim()?.takeIf { folder.hasLimit },
                                     rawName = folder.name,
@@ -240,6 +256,11 @@ fun HomeScreen(
                                 onSetLimitClick = { folderName ->
                                     onClearFolderMessage()
                                     selectedFolder = uiState.folders.find { it.name == folderName }
+                                },
+                                onRenameFolderClick = { folderName ->
+                                    onClearFolderMessage()
+                                    renameAttempted = false
+                                    folderToRename = uiState.folders.find { it.name == folderName }
                                 },
                                 onDeleteFolder = onDeleteFolder,
                                 isRemovableMap = isRemovableMap
@@ -260,9 +281,29 @@ fun HomeScreen(
                 onClearFolderMessage()
             },
             errorMessage = uiState.folderMessage,
-            onCreateFolder = {
+            onCreateFolder = { name, emoji ->
                 createAttempted = true
-                onCreateFolder(it)
+                onCreateFolder(name, emoji)
+            }
+        )
+    }
+
+    folderToRename?.let { folder ->
+        RenameFolderDialog(
+            initialName = folder.name,
+            initialEmoji = folder.emoji,
+            onDismiss = {
+                folderToRename = null
+                renameAttempted = false
+                onClearFolderMessage()
+            },
+            errorMessage = uiState.folderMessage,
+            onRenameFolder = { newName, newEmoji ->
+                renameAttempted = true
+                onRenameFolder(folder.name, newName, newEmoji)
+                if (uiState.folderMessage == null) {
+                    folderToRename = null
+                }
             }
         )
     }
@@ -286,12 +327,24 @@ fun HomeScreen(
         )
     }
 
+    if (showCalendarDialog) {
+        CalendarExpenditureDialog(
+            dailyExpenditures = uiState.dailyExpenditures,
+            currencyCode = uiState.currencyCode,
+            onDismiss = { showCalendarDialog = false }
+        )
+    }
 
 
-    LaunchedEffect(uiState.folders.size, uiState.folderMessage, showCreateDialog, createAttempted) {
+
+    LaunchedEffect(uiState.folders.size, uiState.folderMessage, showCreateDialog, createAttempted, folderToRename, renameAttempted) {
         if (showCreateDialog && createAttempted && uiState.folderMessage == null) {
             showCreateDialog = false
             createAttempted = false
+        }
+        if (folderToRename != null && renameAttempted && uiState.folderMessage == null) {
+            folderToRename = null
+            renameAttempted = false
         }
     }
 }
@@ -300,7 +353,8 @@ fun HomeScreen(
 private fun HomeTopAppBar(
     userName: String,
     profileImageUri: String?,
-    onOpenProfile: () -> Unit
+    onOpenProfile: () -> Unit,
+    onOpenCalendar: () -> Unit
 ) {
     Column {
         Row(
@@ -348,6 +402,17 @@ private fun HomeTopAppBar(
                     ),
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+            
+            Spacer(modifier = Modifier.weight(1f))
+            
+            IconButton(onClick = onOpenCalendar) {
+                Icon(
+                    imageVector = Icons.Rounded.CalendarMonth,
+                    contentDescription = "View Calendar",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
                 )
             }
         }
@@ -972,6 +1037,7 @@ private fun GoalCard(
 @Composable
 private fun WeeklyChartCard(
     chartState: WeeklyExpenseChartUiState,
+    currencyCode: String,
     onChartPeriodSelected: (com.paytrack.viewmodel.TimePeriod) -> Unit
 ) {
     Card(
@@ -1023,6 +1089,7 @@ private fun WeeklyChartCard(
                     labels = chartState.labels,
                     currentDayIndex = chartState.currentDayIndex,
                     isLineGraph = chartState.isLineGraph,
+                    currencyCode = currencyCode,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -1338,9 +1405,10 @@ private fun EmptyCard(message: String) {
 private fun CreateFolderDialog(
     onDismiss: () -> Unit,
     errorMessage: String?,
-    onCreateFolder: (String) -> Unit
+    onCreateFolder: (String, String?) -> Unit
 ) {
     var folderName by rememberSaveable { mutableStateOf("") }
+    var folderEmoji by rememberSaveable { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1355,14 +1423,93 @@ private fun CreateFolderDialog(
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
+                OutlinedTextField(
+                    value = folderEmoji,
+                    onValueChange = { 
+                        if (it.length <= 2) folderEmoji = it 
+                    },
+                    label = { Text("Icon") },
+                    placeholder = { Text("e.g. 💼 (Use emoji keyboard)") },
+                    trailingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.SentimentSatisfied,
+                            contentDescription = "Emoji Icon",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
                 errorMessage?.let {
                     Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onCreateFolder(folderName) }) {
+            TextButton(onClick = { onCreateFolder(folderName, folderEmoji.takeIf { it.isNotBlank() }) }) {
                 Text("Create", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        shape = RoundedCornerShape(28.dp),
+    )
+}
+
+@Composable
+private fun RenameFolderDialog(
+    initialName: String,
+    initialEmoji: String?,
+    onDismiss: () -> Unit,
+    errorMessage: String?,
+    onRenameFolder: (String, String?) -> Unit
+) {
+    var folderName by rememberSaveable(initialName) { mutableStateOf(initialName) }
+    var folderEmoji by rememberSaveable(initialEmoji) { mutableStateOf(initialEmoji.orEmpty()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename Folder", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = folderName,
+                    onValueChange = { folderName = it },
+                    label = { Text("Folder Name") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = folderEmoji,
+                    onValueChange = { 
+                        if (it.length <= 2) folderEmoji = it 
+                    },
+                    label = { Text("Icon") },
+                    placeholder = { Text("e.g. 💼 (Use emoji keyboard)") },
+                    trailingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.SentimentSatisfied,
+                            contentDescription = "Emoji Icon",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                errorMessage?.let {
+                    Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onRenameFolder(folderName, folderEmoji.takeIf { it.isNotBlank() }) }) {
+                Text("Save", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {

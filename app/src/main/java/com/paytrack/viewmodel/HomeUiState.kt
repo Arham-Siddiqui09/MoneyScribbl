@@ -1,6 +1,7 @@
 package com.paytrack.viewmodel
 
 import com.paytrack.data.TransactionType
+import java.time.LocalDate
 
 data class HomeUiState(
     val appName: String = "PayTrack",
@@ -18,6 +19,8 @@ data class HomeUiState(
     val folders: List<FolderUiState> = emptyList(),
     val folderMessage: String? = null,
     val heroPeriod: HeroPeriod = HeroPeriod.ALL,
+    val dailyExpenditures: Map<LocalDate, Double> = emptyMap(),
+    val currencyCode: String = "INR",
     val isLoading: Boolean = true
 )
 
@@ -41,7 +44,8 @@ data class WeeklyExpenseChartUiState(
 data class BudgetCategoryUiState(
     val name: String = "",
     val amount: String = "",
-    val rawAmount: Double = 0.0
+    val rawAmount: Double = 0.0,
+    val emoji: String? = null
 )
 
 data class FolderUiState(
@@ -50,7 +54,8 @@ data class FolderUiState(
     val limitSummary: String? = null,
     val hasLimit: Boolean = false,
     val limitAmount: Double? = null,
-    val limitEndDateMillis: Long? = null
+    val limitEndDateMillis: Long? = null,
+    val emoji: String? = null
 )
 
 data class FolderUsageUiState(
@@ -75,6 +80,7 @@ data class RecentTransactionUiState(
     val rawDateMillis: Long = 0L,
     val isExpense: Boolean = true,
     val category: String = "",
+    val categoryEmoji: String? = null,
     val note: String? = null
 )
 
@@ -84,6 +90,7 @@ data class TransactionsUiState(
     val selectedCategory: String? = null,
     val availableCategories: List<String> = emptyList(),
     val transactions: List<RecentTransactionUiState> = emptyList(),
+    val currencyCode: String = "INR",
     val isLoading: Boolean = true
 )
 
@@ -103,6 +110,8 @@ data class InsightsUiState(
     val savingsLedger: List<SavingsLedgerEntryUiState> = emptyList(),
     val vaultGoalCount: Int = 0,
     // ─────────────────────────────────────────────────────────────────────────
+    val selectedCategoryBreakdownPeriod: TimePeriod = TimePeriod.MONTH,
+    val currencyCode: String = "INR",
     val isLoading: Boolean = true
 )
 
@@ -133,7 +142,8 @@ data class CategoryBreakdownUiState(
 
 data class CategoryOptionUiState(
     val name: String,
-    val availableBudgetLabel: String?
+    val availableBudgetLabel: String?,
+    val emoji: String? = null
 )
 
 data class QrScanUiState(

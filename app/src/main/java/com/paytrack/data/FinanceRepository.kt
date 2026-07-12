@@ -243,10 +243,12 @@ class FinanceRepository(
         }
     }
 
-    suspend fun addFolder(name: String): List<String> {
+    suspend fun createFolder(name: String, emoji: String? = null): List<String> {
         val normalized = name.trim()
+        if (normalized.isBlank()) return getFolders().first().map(Folder::name)
+
         val folders = getFolders().first()
-        val updated = (folders + Folder(normalized)).sanitizeFolders()
+        val updated = (folders + Folder(normalized, emoji = emoji)).sanitizeFolders()
         saveFolders(updated)
         return updated.map(Folder::name)
     }
@@ -255,7 +257,7 @@ class FinanceRepository(
     suspend fun ensureFolderExists(name: String) {
         val folders = getFolders().first()
         if (folders.none { it.name.equals(name, ignoreCase = true) }) {
-            addFolder(name)
+            createFolder(name)
         }
     }
 
@@ -274,6 +276,34 @@ class FinanceRepository(
         saveFolders(updatedFolders)
         return updatedFolders.map(Folder::name)
     }
+    suspend fun renameFolder(oldName: String, newName: String, newEmoji: String?): List<String> {
+        val normalizedNew = newName.trim()
+        val folders = getFolders().first()
+        
+        if (oldName.equals(FALLBACK_FOLDER, ignoreCase = true) || normalizedNew.isBlank()) {
+            return folders.map(Folder::name) // Cannot rename the fallback folder or to blank
+        }
+
+        // If target name already exists (and is different from old name case-insensitively)
+        if (!oldName.equals(normalizedNew, ignoreCase = true) && folders.any { it.name.equals(normalizedNew, ignoreCase = true) }) {
+            return folders.map(Folder::name) 
+        }
+
+        val updatedFolders = folders.map { folder ->
+            if (folder.name.equals(oldName, ignoreCase = true)) {
+                folder.copy(name = normalizedNew, emoji = newEmoji)
+            } else {
+                folder
+            }
+        }.sanitizeFolders()
+        
+        val updatedTransactions = reassignFolder(getTransactions().first(), from = oldName, to = normalizedNew)
+
+        saveTransactions(updatedTransactions)
+        saveFolders(updatedFolders)
+        return updatedFolders.map(Folder::name)
+    }
+
 
     suspend fun updateFolderLimit(name: String, limitAmount: Double, limitStartDateMillis: Long, limitEndDateMillis: Long) {
         val updatedFolders = getFolders().first().map { folder ->
@@ -499,6 +529,7 @@ internal fun serializeFolders(folders: List<Folder>): String {
                 .put("limitAmount", folder.limitAmount)
                 .put("limitStartDateMillis", folder.limitStartDateMillis)
                 .put("limitEndDateMillis", folder.limitEndDateMillis)
+                .put("emoji", folder.emoji)
         )
     }
     return jsonArray.toString()
@@ -520,7 +551,8 @@ internal fun deserializeFolders(json: String): List<Folder> {
                             },
                             limitEndDateMillis = item.optLong("limitEndDateMillis").takeIf {
                                 !item.isNull("limitEndDateMillis") && it > 0L
-                            }
+                            },
+                            emoji = item.optString("emoji").takeIf(String::isNotEmpty)
                         )
                     )
                 }

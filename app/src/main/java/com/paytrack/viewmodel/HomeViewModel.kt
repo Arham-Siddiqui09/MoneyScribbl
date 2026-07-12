@@ -71,7 +71,7 @@ class HomeViewModel(
     private val savingsLedger = MutableStateFlow<List<SavingsLedgerEntry>>(emptyList())
     private var sweepDoneThisSession = false
 
-    private val currencyFormatter = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("en-IN"))
+    private var currencyFormatter = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("en-IN"))
     private val dateFormatter = SimpleDateFormat("dd MMM yyyy", Locale.ENGLISH)
     private val timeFormatter = SimpleDateFormat("dd MMM, hh:mm a", Locale.ENGLISH)
 
@@ -87,20 +87,37 @@ class HomeViewModel(
                 repository.getSavingsGoal(),
                 repository.getFolders(),
                 repository.getSavingsLedger(),
-                userRepository.observeUser()
-            ) { transactions, goal, folders, ledger, user ->
+                userRepository.observeUser(),
+                userRepository.observeCurrency()
+            ) { args: Array<Any?> ->
+                val transactions = args[0] as List<FinanceTransaction>
+                val goal = args[1] as SavingsGoal?
+                val folders = args[2] as List<Folder>
+                val ledger = args[3] as List<SavingsLedgerEntry>
+                val user = args[4] as com.paytrack.data.UserEntity?
+                val currencyCode = args[5] as String
+                
                 object {
                     val t = transactions
                     val g = goal
                     val f = folders
                     val l = ledger
                     val u = user
+                    val c = currencyCode
                 }
             }.collect { data ->
                 allTransactions.value = data.t
                 savingsGoal.value = data.g
                 allFolders.value = data.f
                 savingsLedger.value = data.l
+
+                val locale = when (data.c) {
+                    "USD" -> Locale.US
+                    "EUR" -> Locale.forLanguageTag("en-IE")
+                    "GBP" -> Locale.UK
+                    else -> Locale.forLanguageTag("en-IN")
+                }
+                currencyFormatter = NumberFormat.getCurrencyInstance(locale)
 
                 // Launch sweep as a non-blocking side-effect so the UI updates immediately.
                 // If sweep writes to DataStore it will trigger another emission with fresh data.
@@ -113,8 +130,11 @@ class HomeViewModel(
 
                 _homeUiState.update { it.copy(
                     userName = data.u?.name.orEmpty(),
-                    profileImageUri = data.u?.profileImagePath
+                    profileImageUri = data.u?.profileImagePath,
+                    currencyCode = data.c
                 ) }
+                _transactionsUiState.update { it.copy(currencyCode = data.c) }
+                _insightsUiState.update { it.copy(currencyCode = data.c) }
 
                 updateHomeState(data.t, data.g, data.f)
                 updateTransactionsState(data.t, data.f)
@@ -198,7 +218,7 @@ class HomeViewModel(
         }
     }
 
-    fun createFolder(name: String) {
+    fun createFolder(name: String, emoji: String? = null) {
         val trimmedName = name.trim()
         when {
             trimmedName.isBlank() -> updateFolderMessage("Enter a folder name.")
@@ -207,7 +227,24 @@ class HomeViewModel(
             }
             else -> {
                 viewModelScope.launch {
-                    repository.addFolder(trimmedName)
+                    repository.createFolder(trimmedName, emoji)
+                    updateFolderMessage(null)
+                }
+            }
+        }
+    }
+
+    fun renameFolder(oldName: String, newName: String, newEmoji: String? = null) {
+        val trimmedNewName = newName.trim()
+        when {
+            trimmedNewName.isBlank() -> updateFolderMessage("Enter a folder name.")
+            oldName.equals(FALLBACK_FOLDER, ignoreCase = true) -> updateFolderMessage("The Other folder cannot be renamed.")
+            !oldName.equals(trimmedNewName, ignoreCase = true) && allFolders.value.any { it.name.equals(trimmedNewName, ignoreCase = true) } -> {
+                updateFolderMessage("A folder with that name already exists.")
+            }
+            else -> {
+                viewModelScope.launch {
+                    repository.renameFolder(oldName, trimmedNewName, newEmoji)
                     updateFolderMessage(null)
                 }
             }
@@ -311,6 +348,7 @@ class HomeViewModel(
     fun clearScannedQr() {
         savedStateHandle[SCANNED_QR_KEY] = null
         savedStateHandle[AMOUNT_INPUT_KEY] = null
+        savedStateHandle[SELECTED_CATEGORY_KEY] = null
         _qrUiState.update {
             it.copy(
                 scannedMerchantName = "",
@@ -319,6 +357,7 @@ class HomeViewModel(
                 scannedAmountText = "",
                 amountInput = "",
                 isAmountLocked = false,
+                selectedCategory = null,
                 scanError = null,
                 paymentError = null,
                 canLaunchPayment = false
@@ -443,10 +482,12 @@ class HomeViewModel(
                 pendingConfirmCategory = "",
                 pendingConfirmAppLabel = "",
                 amountInput = "",
+                selectedCategory = null,
                 paymentError = null
             )
         }
         savedStateHandle[AMOUNT_INPUT_KEY] = null
+        savedStateHandle[SELECTED_CATEGORY_KEY] = null
         pendingUpiPackageName = null
     }
 
@@ -540,6 +581,11 @@ class HomeViewModel(
         }
     }
 
+    fun updateCategoryBreakdownPeriod(period: TimePeriod) {
+        _insightsUiState.update { it.copy(selectedCategoryBreakdownPeriod = period) }
+        updateInsightsState(allTransactions.value, savingsLedger.value)
+    }
+
     fun deleteSavingsVaultEntry(id: String) {
         viewModelScope.launch {
             repository.deleteSavingsLedgerEntry(id)
@@ -605,9 +651,20 @@ class HomeViewModel(
                 t.type == TransactionType.EXPENSE && t.dateMillis in start..end 
             }.sumOf(FinanceTransaction::amount)
         } ?: 0.0
+        val dailyExpendituresMap = transactions
+            .filter { it.type == TransactionType.EXPENSE }
+            .groupBy {
+                java.time.Instant.ofEpochMilli(it.dateMillis)
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .toLocalDate()
+            }
+            .mapValues { entry ->
+                entry.value.sumOf { it.amount }
+            }
         
         _homeUiState.update {
             it.copy(
+                dailyExpenditures = dailyExpendituresMap,
                 currentBalance = currencyFormatter.format(totalIncome - totalExpenses),
                 totalIncome = currencyFormatter.format(totalIncome),
                 totalExpenses = currencyFormatter.format(totalExpenses),
@@ -659,7 +716,8 @@ class HomeViewModel(
                         BudgetCategoryUiState(
                             name = category,
                             amount = currencyFormatter.format(sumAmount),
-                            rawAmount = sumAmount
+                            rawAmount = sumAmount,
+                            emoji = folders.find { it.name.equals(category, ignoreCase = true) }?.emoji
                         )
                     }
                     .sortedByDescending { it.rawAmount }
@@ -675,7 +733,8 @@ class HomeViewModel(
                         },
                         hasLimit = folder.limitAmount != null && folder.limitEndDateMillis != null,
                         limitAmount = folder.limitAmount,
-                        limitEndDateMillis = folder.limitEndDateMillis
+                        limitEndDateMillis = folder.limitEndDateMillis,
+                        emoji = folder.emoji
                     )
                 },
                 isLoading = false
@@ -707,14 +766,15 @@ class HomeViewModel(
             it.copy(
                 selectedCategory = selectedCategory,
                 availableCategories = folderNames,
-                transactions = filtered.map(::transactionToListItem),
+                transactions = filtered.map { transactionToListItem(it, folders) },
                 isLoading = false
             )
         }
     }
 
     private fun updateInsightsState(transactions: List<FinanceTransaction>, ledger: List<SavingsLedgerEntry> = emptyList()) {
-        val insights = buildFinanceInsights(transactions, System.currentTimeMillis())
+        val categoryBreakdownPeriod = _insightsUiState.value.selectedCategoryBreakdownPeriod
+        val insights = buildFinanceInsights(transactions, System.currentTimeMillis(), categoryBreakdownPeriod)
         val currentPeriod = _insightsUiState.value.selectedTimePeriod
         val (points, _) = buildChartPointsForPeriod(transactions, System.currentTimeMillis(), currentPeriod)
 
@@ -784,7 +844,7 @@ class HomeViewModel(
             } else {
                 null
             }
-            CategoryOptionUiState(name = folder.name, availableBudgetLabel = availableLabel)
+            CategoryOptionUiState(name = folder.name, availableBudgetLabel = availableLabel, emoji = folder.emoji)
         }
         val categoryNames = categories.map { it.name }
         val selectedCategory = savedStateHandle.get<String>(SELECTED_CATEGORY_KEY)?.takeIf { savedCategory ->
@@ -850,7 +910,8 @@ class HomeViewModel(
         )
     }
 
-    private fun transactionToListItem(transaction: FinanceTransaction): RecentTransactionUiState {
+    private fun transactionToListItem(transaction: FinanceTransaction, folders: List<Folder>): RecentTransactionUiState {
+        val folderEmoji = folders.find { it.name.equals(transaction.category, ignoreCase = true) }?.emoji
         return RecentTransactionUiState(
             id = transaction.id,
             title = transaction.merchantName ?: transaction.category,
@@ -874,6 +935,7 @@ class HomeViewModel(
             rawDateMillis = transaction.dateMillis,
             isExpense = transaction.type == TransactionType.EXPENSE,
             category = transaction.category,
+            categoryEmoji = folderEmoji,
             note = transaction.note
         )
     }
