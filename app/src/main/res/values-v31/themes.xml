@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.moneyscribbl" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- System splash: plain brand-dark background, no icon.
+             This makes the OS window splash invisible â€” it blends seamlessly
+             into the Compose SplashScreen which owns the actual brand animation. -->
+        <item name="android:windowSplashScreenBackground">#160F2E</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>
+    </style>
+</resources>
+
