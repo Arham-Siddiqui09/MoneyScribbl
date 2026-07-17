@@ -443,18 +443,12 @@ private fun HeroBalanceCard(
     heroPeriod: com.moneyscribbl.viewmodel.HeroPeriod,
     onHeroPeriodSelected: (com.moneyscribbl.viewmodel.HeroPeriod) -> Unit
 ) {
+    // Fix 1: replaced shadow() (offscreen render pass every scroll frame) with standard cardElevation
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(
-                elevation = 12.dp,
-                shape = RoundedCornerShape(24.dp),
-                ambientColor = Color(0xFF7C6BFF),
-                spotColor = Color(0xFF5B4CFC)
-            ),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
         val bgBrush = remember {
             Brush.linearGradient(
@@ -481,8 +475,10 @@ private fun HeroBalanceCard(
                             lineTo(0f, canvasHeight)
                             close()
                         }
+                        // Fix 2: cache wave color — avoids Color object allocation every draw frame
+                        val waveColor = Color.White.copy(alpha = 0.15f)
                         onDrawBehind {
-                            drawPath(path = path, color = Color.White.copy(alpha = 0.15f))
+                            drawPath(path = path, color = waveColor)
                         }
                     }
             )
@@ -839,9 +835,13 @@ private fun GoalCard(
     onClearGoal: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Fix 4: tween(600ms) settles in one pass; spring() kept recomposing GoalCard for ~600ms after settling
     val animatedProgress by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
-        animationSpec = spring(),
+        animationSpec = androidx.compose.animation.core.tween(
+            durationMillis = 600,
+            easing = androidx.compose.animation.core.FastOutSlowInEasing
+        ),
         label = "progressAnim"
     )
 
@@ -1732,40 +1732,43 @@ fun PendingTransactionsBanner(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         
+        // Fix 3: key(txn.id) gives Compose stable identity per row — unchanged rows are skipped on recomposition
         transactions.forEach { txn ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(txn.title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                    Text(txn.amount, style = MaterialTheme.typography.bodySmall, color = if (txn.isExpense) ExpenseRed else IncomeGreen)
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.errorContainer)
-                            .clickable { onDelete(txn.id) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Outlined.Close, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(16.dp))
+            key(txn.id) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(txn.title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                        Text(txn.amount, style = MaterialTheme.typography.bodySmall, color = if (txn.isExpense) ExpenseRed else IncomeGreen)
                     }
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer)
-                            .clickable { onConfirm(txn.id) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Outlined.Check, contentDescription = "Confirm", tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(16.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.errorContainer)
+                                .clickable { onDelete(txn.id) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Outlined.Close, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(16.dp))
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                .clickable { onConfirm(txn.id) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Outlined.Check, contentDescription = "Confirm", tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(16.dp))
+                        }
                     }
                 }
             }
