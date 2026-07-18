@@ -159,7 +159,7 @@ fun QrScanRoute(
             }
 
             // Step 1: Amount & Folder
-            StepLabel("STEP 1 · AMOUNT & FOLDER")
+
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(20.dp),
@@ -260,7 +260,7 @@ fun QrScanRoute(
             }
 
             // Step 2: Choose UPI App
-            StepLabel("STEP 2 · CHOOSE UPI APP")
+
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(20.dp),

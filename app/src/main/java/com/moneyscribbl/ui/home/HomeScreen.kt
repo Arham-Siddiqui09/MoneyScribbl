@@ -135,7 +135,7 @@ fun HomeScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 20.dp),
-                    verticalArrangement = Arrangement.spacedBy(24.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     item {
                         HomeTopAppBar(
@@ -277,7 +277,7 @@ fun HomeScreen(
                             )
                         }
                     }
-                    item { Spacer(modifier = Modifier.height(32.dp)) }
+                    item { Spacer(modifier = Modifier.height(48.dp)) }
                 }
             }
         }
