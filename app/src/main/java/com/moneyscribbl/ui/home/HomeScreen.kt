@@ -31,13 +31,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PaintingStyle.Companion.Stroke
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.moneyscribbl.ui.home.components.WeeklyExpenseChart
@@ -45,6 +50,8 @@ import com.moneyscribbl.ui.theme.*
 import com.moneyscribbl.viewmodel.*
 import java.util.Calendar
 import java.util.Date
+import kotlin.io.path.Path
+import kotlin.io.path.moveTo
 
 @Composable
 fun HomeRoute(
@@ -435,57 +442,117 @@ private fun HomeTopAppBar(
     }
 }
 
+// New imports needed beyond what your file already has:
+// import androidx.compose.material3.LocalTextStyle
+// import androidx.compose.ui.graphics.drawscope.Stroke
+// import androidx.compose.ui.text.style.TextOverflow
+// import androidx.compose.foundation.layout.VerticalDivider   (Material3 1.2+)
+// New imports needed beyond what your file already has:
+// import androidx.compose.material3.LocalTextStyle
+// import androidx.compose.ui.graphics.drawscope.Stroke
+// import androidx.compose.ui.text.style.TextOverflow
+// import androidx.compose.foundation.layout.VerticalDivider   (Material3 1.2+)
+// Note: TextStyle.brush (used for the gradient balance text) requires
+// androidx.compose.ui:ui-text 1.4.0+ — you're almost certainly already past that.
 @Composable
+// New imports needed beyond what your file already has:
+// import androidx.compose.material3.LocalTextStyle
+// import androidx.compose.ui.graphics.Path
+// import androidx.compose.ui.graphics.StrokeCap
+// import androidx.compose.ui.graphics.drawscope.Stroke
+// import androidx.compose.ui.text.style.TextOverflow
+// import androidx.compose.foundation.layout.VerticalDivider   (Material3 1.2+)
+// Note: TextStyle.brush (used for the gradient balance text) requires
+// androidx.compose.ui:ui-text 1.4.0+ — you're almost certainly already past that.
 private fun HeroBalanceCard(
-    balance: String, 
-    income: String, 
+    balance: String,
+    income: String,
     expenses: String,
     heroPeriod: com.moneyscribbl.viewmodel.HeroPeriod,
     onHeroPeriodSelected: (com.moneyscribbl.viewmodel.HeroPeriod) -> Unit
 ) {
-    // Fix 1: replaced shadow() (offscreen render pass every scroll frame) with standard cardElevation
+    // Fix 1: shadow() forces an offscreen render pass on every scroll frame — use cardElevation instead.
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(26.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
+        // Colors sampled directly from the reference: a muted, deep indigo — not a
+        // bright saturated violet. Darkest corner ~#28264E, highlight zone ~#7A74AC.
         val bgBrush = remember {
             Brush.linearGradient(
-                colors = listOf(Color(0xFF5B4CFC), Color(0xFF7C6BFF), Color(0xFF9C8CFF))
+                colors = listOf(Color(0xFF2A274E), Color(0xFF453E80), Color(0xFF211F42)),
+                start = Offset(0f, 0f),
+                end = Offset(1000f, 1400f)
             )
         }
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                // Fix 2: clip content — not just the Card background — so the watermark
+                // and shine overlay never bleed past the rounded corners.
+                .clip(RoundedCornerShape(26.dp))
                 .background(brush = bgBrush)
         ) {
-            // Ambient texture wave
+            // Fix 3: a curved diagonal ribbon — bright, then a darker curved shadow right
+            // behind it — sweeping from the upper-right down to the left-center of the card.
+            // Correction from my last pass: this needs an actual curve, not a straight
+            // linear band. drawWithCache already caches the Path/Brush per size (only
+            // rebuilt on resize, not per frame), so a curved Path here isn't the
+            // performance problem I originally flagged — only the un-cached Color
+            // allocation in the very first version was.
             Spacer(
                 modifier = Modifier
                     .matchParentSize()
                     .drawWithCache {
-                        val canvasWidth = size.width
-                        val canvasHeight = size.height
-                        val path = androidx.compose.ui.graphics.Path().apply {
-                            moveTo(0f, canvasHeight * 0.6f)
-                            quadraticTo(canvasWidth * 0.3f, canvasHeight * 0.9f, canvasWidth * 0.7f, canvasHeight * 0.5f)
-                            quadraticTo(canvasWidth * 0.9f, canvasHeight * 0.3f, canvasWidth, canvasHeight * 0.4f)
-                            lineTo(canvasWidth, canvasHeight)
-                            lineTo(0f, canvasHeight)
-                            close()
+                        val w = size.width
+                        val h = size.height
+
+                        fun ribbon(yOffset: Float) = Path().apply {
+                            moveTo(w * 0.95f, -h * 0.05f + yOffset)
+                            quadraticTo(w * 0.55f, h * 0.28f + yOffset, w * 0.15f, h * 0.55f + yOffset)
+                            lineTo(w * 0.02f, h * 0.68f + yOffset)
                         }
-                        // Fix 2: cache wave color — avoids Color object allocation every draw frame
-                        val waveColor = Color.White.copy(alpha = 0.15f)
+
+                        val highlightPath = ribbon(0f)
+                        val shadowPath = ribbon(h * 0.14f)
+
                         onDrawBehind {
-                            drawPath(path = path, color = waveColor)
+                            drawPath(
+                                path = highlightPath,
+                                color = Color.White.copy(alpha = 0.14f),
+                                style = Stroke(width = h * 0.16f, cap = StrokeCap.Round)
+                            )
+                            drawPath(
+                                path = shadowPath,
+                                color = Color.Black.copy(alpha = 0.16f),
+                                style = Stroke(width = h * 0.14f, cap = StrokeCap.Round)
+                            )
                         }
                     }
             )
 
+            // Outlined rupee watermark — the reference sits mid-right, clear of the corner,
+            // and modestly sized (roughly 40% of the card's height, not a giant corner mark).
+            Text(
+                text = "₹",
+                fontFamily = com.moneyscribbl.ui.theme.IBMPlexMono,
+                fontWeight = FontWeight.Bold,
+                fontSize = 130.sp,
+                style = LocalTextStyle.current.copy(
+                    color = Color.White.copy(alpha = 0.14f),
+                    drawStyle = Stroke(width = 2.dp.value)
+                ),
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .offset(x = (-20).dp, y = 26.dp)
+            )
+
             Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
+                modifier = Modifier.padding(horizontal = 22.dp, vertical = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -496,39 +563,55 @@ private fun HeroBalanceCard(
                         Text(
                             text = "Total Balance",
                             style = MaterialTheme.typography.labelLarge,
-                            color = Color.White.copy(alpha = 0.7f)
+                            color = Color.White.copy(alpha = 0.75f)
                         )
+                        val isNegative = balance.trimStart().startsWith("-")
+                        // The reference renders the negative balance as a left-to-right
+                        // gradient — deep coral at the start fading to near-white pink at
+                        // the end — not a flat color. Sampled stops: #E2686E -> #FCEBFE.
                         Text(
                             text = balance,
                             fontFamily = com.moneyscribbl.ui.theme.IBMPlexMono,
                             fontSize = 38.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color.White
+                            style = if (isNegative) {
+                                LocalTextStyle.current.copy(
+                                    brush = Brush.linearGradient(
+                                        colors = listOf(Color(0xFFE2686E), Color(0xFFFCEBFE))
+                                    )
+                                )
+                            } else {
+                                LocalTextStyle.current.copy(color = Color.White)
+                            }
                         )
                     }
-                    
+
+
                     var menuExpanded by remember { mutableStateOf(false) }
                     Box {
                         Row(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color.White.copy(alpha = 0.15f))
+                                .clip(RoundedCornerShape(50))
+                                .background(Color.White.copy(alpha = 0.16f))
                                 .clickable { menuExpanded = true }
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
                                 text = if (heroPeriod == com.moneyscribbl.viewmodel.HeroPeriod.ALL) "All" else "This Month",
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Medium,
                                 color = Color.White
                             )
                             Icon(
                                 imageVector = Icons.Default.ArrowDropDown,
                                 contentDescription = "Select period",
                                 tint = Color.White,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         }
+
                         val isAllSelected = heroPeriod == com.moneyscribbl.viewmodel.HeroPeriod.ALL
                         val isMonthSelected = heroPeriod == com.moneyscribbl.viewmodel.HeroPeriod.THIS_MONTH
 
@@ -546,7 +629,6 @@ private fun HeroBalanceCard(
                                 )
                                 .padding(vertical = 8.dp)
                         ) {
-
                             DropdownMenuItem(
                                 text = {
                                     Row(
@@ -555,10 +637,10 @@ private fun HeroBalanceCard(
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            androidx.compose.foundation.layout.Box(
+                                            Box(
                                                 modifier = Modifier
                                                     .size(36.dp)
-                                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                                    .clip(CircleShape)
                                                     .background(
                                                         if (isAllSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                                                         else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
@@ -573,9 +655,7 @@ private fun HeroBalanceCard(
                                                     modifier = Modifier.size(18.dp)
                                                 )
                                             }
-
                                             Spacer(modifier = Modifier.width(14.dp))
-
                                             Text(
                                                 text = "All Time",
                                                 style = MaterialTheme.typography.bodyMedium.copy(
@@ -585,7 +665,6 @@ private fun HeroBalanceCard(
                                                 )
                                             )
                                         }
-
                                         if (isAllSelected) {
                                             Icon(
                                                 imageVector = Icons.Default.Check,
@@ -617,10 +696,10 @@ private fun HeroBalanceCard(
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            androidx.compose.foundation.layout.Box(
+                                            Box(
                                                 modifier = Modifier
                                                     .size(36.dp)
-                                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                                    .clip(CircleShape)
                                                     .background(
                                                         if (isMonthSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                                                         else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
@@ -635,9 +714,7 @@ private fun HeroBalanceCard(
                                                     modifier = Modifier.size(18.dp)
                                                 )
                                             }
-
                                             Spacer(modifier = Modifier.width(14.dp))
-
                                             Text(
                                                 text = "This Month",
                                                 style = MaterialTheme.typography.bodyMedium.copy(
@@ -647,7 +724,6 @@ private fun HeroBalanceCard(
                                                 )
                                             )
                                         }
-
                                         if (isMonthSelected) {
                                             Icon(
                                                 imageVector = Icons.Default.Check,
@@ -667,23 +743,38 @@ private fun HeroBalanceCard(
                         }
                     }
                 }
-                
+
+                // Unified Income / Expenses strip — one rounded container split by a hairline
+                // divider, matching the reference design instead of two separate white pills.
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Color.Black.copy(alpha = 0.14f))
+                        .padding(vertical = 12.dp, horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    HeroMetricPill(
+                    HeroMetricItem(
                         icon = Icons.Outlined.ArrowUpward,
                         label = "Income",
                         value = income,
-                        iconTint = Color(0xFF0FA968),
+                        badgeColor = Color(0xFF16C784),
                         modifier = Modifier.weight(1f)
                     )
-                    HeroMetricPill(
+
+                    VerticalDivider(
+                        modifier = Modifier
+                            .height(32.dp)
+                            .padding(horizontal = 12.dp),
+                        thickness = 1.dp,
+                        color = Color.White.copy(alpha = 0.2f)
+                    )
+
+                    HeroMetricItem(
                         icon = Icons.Outlined.ArrowDownward,
                         label = "Expenses",
                         value = expenses,
-                        iconTint = Color(0xFFE53935),
+                        badgeColor = Color(0xFFE5533D),
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -693,36 +784,48 @@ private fun HeroBalanceCard(
 }
 
 @Composable
-private fun HeroMetricPill(
+private fun HeroMetricItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     value: String,
-    iconTint: Color,
+    badgeColor: Color,
     modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = modifier
-            .background(Color.White.copy(alpha = 0.15f), RoundedCornerShape(16.dp))
-            .padding(12.dp),
+        modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        // Solid colored badge (not a white circle + tinted icon) — matches the reference art directly.
         Box(
             modifier = Modifier
-                .size(28.dp)
-                .background(Color.White, CircleShape),
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(badgeColor),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = iconTint,
-                modifier = Modifier.size(16.dp)
+                tint = Color.White,
+                modifier = Modifier.size(15.dp)
             )
         }
         Column {
-            Text(text = label, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f))
-            Text(text = value, fontFamily = com.moneyscribbl.ui.theme.IBMPlexMono, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.75f)
+            )
+            Text(
+                text = value,
+                fontFamily = com.moneyscribbl.ui.theme.IBMPlexMono,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
