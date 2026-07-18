@@ -177,8 +177,20 @@ fun FinanceNavGraph(
                         uiState = homeUiState,
                         onOpenProfile = { navController.navigate(PROFILE_ROUTE) },
                         onAddTransaction = { navController.navigate(TRANSACTION_FORM_ROUTE) },
-                        onOpenTransactions = { navController.navigate(TRANSACTIONS_ROUTE) },
-                        onOpenQr = { navController.navigate(QR_ROUTE) },
+                        onOpenTransactions = {
+                            navController.navigate(TRANSACTIONS_ROUTE) {
+                                popUpTo(HOME_ROUTE) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        onOpenQr = {
+                            navController.navigate(QR_ROUTE) {
+                                popUpTo(HOME_ROUTE) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
                         onEditGoal = { navController.navigate(GOAL_FORM_ROUTE) },
                         onClearGoal = { homeViewModel.clearSavingsGoal() },
                         onCreateFolder = homeViewModel::createFolder,
